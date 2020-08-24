@@ -37,6 +37,60 @@ import SCons.Util
 from .internal import debug
 
 
+"""
+# SCONS_MSCOMMON_DEBUG is internal-use so undocumented:
+# set to '-' to print to console, else set to filename to log to
+LOGFILE = os.environ.get('SCONS_MSCOMMON_DEBUG')
+if LOGFILE == '-':
+    def debug(message):
+        print(message)
+elif LOGFILE:
+    import logging
+    modulelist = (
+        # root module and parent/root module
+        'MSCommon', 'Tool',
+        # python library and below: correct iff scons does not have a lib folder
+        'lib',
+        # scons modules
+        'SCons', 'test', 'scons'
+    )
+    def get_relative_filename(filename, module_list):
+        if not filename:
+            return filename
+        for module in module_list:
+            try:
+                ind = filename.rindex(module)
+                return filename[ind:]
+            except ValueError:
+                pass
+        return filename
+    class _Debug_Filter(logging.Filter):
+        # custom filter for module relative filename
+        def filter(self, record):
+            relfilename = get_relative_filename(record.pathname, modulelist)
+            relfilename = relfilename.replace('\\', '/')
+            record.relfilename = relfilename
+            return True
+    logging.basicConfig(
+        # This looks like:
+        #   00109ms:MSCommon/vc.py:find_vc_pdir#447:
+        format=(
+            '%(relativeCreated)05dms'
+            ':%(relfilename)s'
+            ':%(funcName)s'
+            '#%(lineno)s'
+            ':%(message)s: '
+        ),
+        filename=LOGFILE,
+        level=logging.DEBUG)
+    logger = logging.getLogger(name=__name__)
+    logger.addFilter(_Debug_Filter())
+    debug = logger.debug
+else:
+    def debug(x): return None
+"""
+
+
 # SCONS_CACHE_MSVC_CONFIG is public, and is documented.
 CONFIG_CACHE = os.environ.get('SCONS_CACHE_MSVC_CONFIG')
 if CONFIG_CACHE in ('1', 'true', 'True'):
