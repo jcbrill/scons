@@ -50,7 +50,6 @@ import SCons.Util
 import subprocess
 import os
 import platform
-import sys
 from string import digits as string_digits
 from subprocess import PIPE
 
