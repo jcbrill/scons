@@ -53,6 +53,7 @@ import platform
 from string import digits as string_digits
 from subprocess import PIPE
 
+import sys
 import json
 import re
 from collections import namedtuple
