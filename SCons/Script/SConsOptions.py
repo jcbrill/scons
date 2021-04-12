@@ -28,16 +28,13 @@ import textwrap
 
 no_hyphen_re = re.compile(r'(\s+|(?<=[\w!\"\'&.,?])-{2,}(?=\w))')
 
-try:
-    from gettext import gettext
-except ImportError:
-    def gettext(message):
-        return message
-_ = gettext
+import gettext
+_ = gettext.gettext
 
 import SCons.Node.FS
 import SCons.Platform.virtualenv
 import SCons.Warnings
+from . import Main
 
 OptionValueError        = optparse.OptionValueError
 SUPPRESS_HELP           = optparse.SUPPRESS_HELP
@@ -130,6 +127,7 @@ class SConsValues(optparse.Values):
         'clean',
         'diskcheck',
         'duplicate',
+        'hash_format',
         'help',
         'implicit_cache',
         'max_drift',
@@ -229,7 +227,10 @@ class SConsOption(optparse.Option):
             fmt = "option %s: nargs='?' is incompatible with short options"
             raise SCons.Errors.UserError(fmt % self._short_opts[0])
 
-    CHECK_METHODS = optparse.Option.CHECK_METHODS + [_check_nargs_optional]
+    CHECK_METHODS = optparse.Option.CHECK_METHODS
+    if CHECK_METHODS is None:
+        CHECK_METHODS = []
+    CHECK_METHODS = CHECK_METHODS + [_check_nargs_optional]
     CONST_ACTIONS = optparse.Option.CONST_ACTIONS + optparse.Option.TYPED_ACTIONS
 
 class SConsOptionGroup(optparse.OptionGroup):
@@ -713,6 +714,27 @@ def Parser(version):
                   action="help",
                   help="Print this message and exit.")
 
+    def warn_md5_chunksize_deprecated(option, opt, value, parser):
+        if opt == '--md5-chunksize':
+            SCons.Warnings.warn(SCons.Warnings.DeprecatedWarning,
+                                "Parameter %s is deprecated. Use "
+                                "--hash-chunksize instead." % opt)
+
+        setattr(parser.values, option.dest, value)
+
+    op.add_option('--hash-chunksize', '--md5-chunksize',
+                  nargs=1, type="int",
+                  dest='md5_chunksize', default=SCons.Node.FS.File.hash_chunksize,
+                  action="callback",
+                  help="Set chunk-size for hash signature computation to N kilobytes.",
+                  callback=warn_md5_chunksize_deprecated,
+                  metavar="N")
+
+    op.add_option('--hash-format',
+                  dest='hash_format',
+                  action='store',
+                  help='Hash format (e.g. md5, sha1, or sha256).')
+
     op.add_option('-i', '--ignore-errors',
                   dest='ignore_errors', default=False,
                   action="store_true",
@@ -773,21 +795,14 @@ def Parser(version):
                   help="Set maximum system clock drift to N seconds.",
                   metavar="N")
 
-    op.add_option('--md5-chunksize',
-                  nargs=1, type="int",
-                  dest='md5_chunksize', default=SCons.Node.FS.File.md5_chunksize,
-                  action="store",
-                  help="Set chunk-size for MD5 signature computation to N kilobytes.",
-                  metavar="N")
-
     op.add_option('-n', '--no-exec', '--just-print', '--dry-run', '--recon',
                   dest='no_exec', default=False,
                   action="store_true",
                   help="Don't build; just print commands.")
 
     op.add_option('--no-site-dir',
-                  dest='no_site_dir', default=False,
-                  action="store_true",
+                  dest='site_dir',
+                  action="store_false",
                   help="Don't search or use the usual site_scons dir.")
 
     op.add_option('--profile',
@@ -841,7 +856,6 @@ def Parser(version):
     tree_options = ["all", "derived", "prune", "status", "linedraw"]
 
     def opt_tree(option, opt, value, parser, tree_options=tree_options):
-        from . import Main
         tp = Main.TreePrinter()
         for o in value.split(','):
             if o == 'all':
