@@ -12,6 +12,8 @@ NEW FUNCTIONALITY
     - Add support for the (TARGET,SOURCE,TARGETS,SOURCES,CHANGED_TARGETS,CHANGED_SOURCES}.relpath property.
       This will provide a path relative to the top of the build tree (where the SConstruct is located)
       Fixes #396
+    - Added --experimental flag, to enable various experimental features/tools.  You can specify
+      'all', 'none', or any combination of available experimental features.
 
 DEPRECATED FUNCTIONALITY
 ------------------------
@@ -57,6 +59,9 @@ FIXES
     - DocbookXslt tool: The XSLT stylesheet file is now initialized to an env.File() Node, 
       such that dependencies work correctly in hierarchical builds (eg when using 
       DocbookXslt in SConscript('subdir/SConscript') context.
+    - The Install builder will now set the writable mode on the file(s) it
+      copies. This restores the (previously undocumented) SCons behavior
+      that regressed as of 4.0.0.
 
 
 IMPROVEMENTS
