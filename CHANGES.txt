@@ -9,6 +9,10 @@ NOTE: The 4.2.0 Release of SCons will drop Python 3.5 Support
 
 RELEASE  VERSION/DATE TO BE FILLED IN LATER
 
+  From Joseph Brill:
+    - Internal MSVS update: Remove unnecessary calls to find all installed versions of msvc
+      when constructing the installed visual studios list.
+
   From William Deegan:
     - Improve Subst()'s logic to check for proper callable function or class's argument list.
       It will now allow callables with expected args, and any extra args as long as they
@@ -18,11 +22,19 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       "Multiple ways to build the same target were specified for:".  Now mingw will disable
       creating the symlinks (and adding version string to ) dlls.  It sets SHLIBNOVERSIONSYMLINKS,
       IMPLIBNOVERSIONSYMLINKS and LDMODULENOVERSIONSYMLINKS to True.
+    - Added --experimental flag, to enable various experimental features/tools.  You can specify
+      'all', 'none', or any combination of available experimental features.
 
   From David H:
     - Fix Issue #3906 - `IMPLICIT_COMMAND_DEPENDENCIES` was not properly disabled when
       set to any string value (For example ['none','false','no','off'])
       Also previously 'All' wouldn't have the desired affect.
+
+  From Ivan Kravets:
+    - Provide a custom argument escape function for `TempFileMunge` using a new
+      `TEMPFILEARGESCFUNC` variable. Useful if you need to apply extra operations on
+      a command argument before writing to a temporary file (fix Windows slashes,
+      normalize paths, etc.)
 
   From Henrik Maier:
    - DocbookXslt tool: The XSLT stylesheet file is now initialized to an env.File() Node,
@@ -64,6 +76,8 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       didn't really differ.
     - Don't strip spaces in INSTALLSTR by using raw subst (issue 2018)
     - Deprecate Python 3.5 as a supported version.
+    - CPPDEFINES now expands construction variable references (issue 2363)
+    - Restore behavior that Install()'d files are writable (issue 3927)
 
   From Dillan Mills:
     - Add support for the (TARGET,SOURCE,TARGETS,SOURCES,CHANGED_TARGETS,CHANGED_SOURCES}.relpath property.
@@ -119,6 +133,8 @@ RELEASE 4.1.0 - Tues, 19 Jan 2021 15:04:42 -0700
       SCons.Node.Node.clear() clear out all caching-related state.
     - Change Environment.SideEffect() to not add duplicate side effects.
       NOTE: The list of returned side effect Nodes will not include any duplicate side effect Nodes.
+    - Add support to the Python scanner for finding dynamically generated dependencies.
+      Previously the scanner only found imports if they existed on disk at scanning time.
 
   From David H:
     - Add ZIP_OVERRIDE_TIMESTAMP env option to Zip builder which allows for overriding of the file
@@ -129,6 +145,7 @@ RELEASE 4.1.0 - Tues, 19 Jan 2021 15:04:42 -0700
     - Fix python3 crash when Value node get_text_content when child content does not have decode()
       NOTE: If you depend on Value node's get_text_content returning concatenated contents of it's
       children. This may break your code. It now concatenates the csig() of all children.
+>>>>>>> master
 
   From Joachim Kuebart:
     - Suppress missing SConscript deprecation warning if `must_exist=False`
