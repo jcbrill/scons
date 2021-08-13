@@ -690,18 +690,18 @@ def find_vc_pdir_registry(env, msvc_version):
         try:
             comps = None
             if not key:
-                raise SCons.Util.WinError
+                raise OSError
             if common.is_win64():
                 try:
                     # ordinarily at win64, try Wow6432Node first.
                     comps = common.read_reg(root + 'Wow6432Node\\' + key, hkroot)
-                except SCons.Util.WinError:
+                except OSError:
                     # at Microsoft Visual Studio for Python 2.7, value is not in Wow6432Node
                     pass
             if not comps:
                 # not Win64, or Microsoft Visual Studio for Python 2.7
                 comps = common.read_reg(root + key, hkroot)
-        except SCons.Util.WinError:
+        except OSError:
             debug('no VC registry key {}'.format(repr(key)))
         else:
             debug('found VC in registry: {}'.format(comps))
@@ -2115,7 +2115,7 @@ def _registry_get_140_product(env):
         try:
             vc140_dir = common.read_reg(vcvars140bat_key, SCons.Util.HKEY_LOCAL_MACHINE)
             break
-        except SCons.Util.WinError:
+        except OSError:
             # TODO|JCB: debug log error
             pass
 
