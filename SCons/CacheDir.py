@@ -106,24 +106,18 @@ def CachePushFunc(target, source, env):
     tempfile = "%s.tmp%s"%(cachefile,cache_tmp_uuid)
     errfmt = "Unable to copy %s to cache. Cache file is %s"
 
-    if not fs.isdir(cachedir):
-        try:
-            fs.makedirs(cachedir)
-        except EnvironmentError:
-            # We may have received an exception because another process
-            # has beaten us creating the directory.
-            if not fs.isdir(cachedir):
-                msg = errfmt % (str(target), cachefile)
-                raise SCons.Errors.SConsEnvironmentError(msg)
-
+    try:
+        fs.makedirs(cachedir, exist_ok=True)
+    except OSError:
+        msg = errfmt % (str(target), cachefile)
+        raise SCons.Errors.SConsEnvironmentError(msg)
     try:
         if fs.islink(t.get_internal_path()):
             fs.symlink(fs.readlink(t.get_internal_path()), tempfile)
         else:
             cd.copy_to_cache(env, t.get_internal_path(), tempfile)
         fs.rename(tempfile, cachefile)
-        st = fs.stat(t.get_internal_path())
-        fs.chmod(cachefile, stat.S_IMODE(st[stat.ST_MODE]) | stat.S_IWRITE)
+
     except EnvironmentError:
         # It's possible someone else tried writing the file at the
         # same time we did, or else that there was some problem like
@@ -225,7 +219,11 @@ class CacheDir:
     @classmethod
     def copy_to_cache(cls, env, src, dst):
         try:
-            return env.fs.copy2(src, dst)
+            result = env.fs.copy2(src, dst)
+            fs = env.File(src).fs
+            st = fs.stat(src)
+            fs.chmod(dst, stat.S_IMODE(st[stat.ST_MODE]) | stat.S_IWRITE)
+            return result
         except AttributeError as ex:
             raise EnvironmentError from ex
 

@@ -1,16 +1,6 @@
-"""SCons.Tool.icl
-
-Tool-specific initialization for the Intel C/C++ compiler.
-Supports Linux and Windows compilers, v7 and up.
-
-There normally shouldn't be any need to import this module directly.
-It will usually be imported through the generic SCons.Tool.Tool()
-selection method.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -30,7 +20,15 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+
+"""Tool-specific initialization for the Intel C/C++ compiler.
+
+Supports Linux and Windows compilers, v7 and up.
+
+There normally shouldn't be any need to import this module directly.
+It will usually be imported through the generic SCons.Tool.Tool()
+selection method.
+"""
 
 import glob
 import math
@@ -177,9 +175,7 @@ def get_intel_registry_value(valuename, version=None, abi=None):
             except SCons.Util.RegError:
                 raise MissingRegistryError("%s was not found in the registry, for Intel compiler version %s, abi='%s'"%(K, version,abi))
 
-        except SCons.Util.RegError:
-            raise MissingRegistryError("%s was not found in the registry, for Intel compiler version %s, abi='%s'"%(K, version,abi))
-        except SCons.Util.WinError:
+        except (SCons.Util.RegError, OSError):
             raise MissingRegistryError("%s was not found in the registry, for Intel compiler version %s, abi='%s'"%(K, version,abi))
 
     # Get the value:
@@ -203,7 +199,7 @@ def get_all_compiler_versions():
         try:
             k = SCons.Util.RegOpenKeyEx(SCons.Util.HKEY_LOCAL_MACHINE,
                                         keyname)
-        except SCons.Util.WinError:
+        except OSError:
             # For version 13 or later, check for default instance UUID
             if is_win64:
                 keyname = 'Software\\WoW6432Node\\Intel\\Suites'
@@ -212,7 +208,7 @@ def get_all_compiler_versions():
             try:
                 k = SCons.Util.RegOpenKeyEx(SCons.Util.HKEY_LOCAL_MACHINE,
                                             keyname)
-            except SCons.Util.WinError:
+            except OSError:
                 return []
         i = 0
         versions = []
@@ -454,20 +450,26 @@ def generate(env, version=None, abi=None, topdir=None, verbose=0):
         # on $PATH and the user is importing their env.
         class ICLTopDirWarning(SCons.Warnings.SConsWarning):
             pass
-        if (is_mac or is_linux) and not env.Detect('icc') or \
-           is_windows and not env.Detect('icl'):
 
+        if (
+            ((is_mac or is_linux) and not env.Detect('icc'))
+            or (is_windows and not env.Detect('icl'))
+        ):
             SCons.Warnings.enableWarningClass(ICLTopDirWarning)
-            SCons.Warnings.warn(ICLTopDirWarning,
-                                "Failed to find Intel compiler for version='%s', abi='%s'"%
-                                (str(version), str(abi)))
+            SCons.Warnings.warn(
+                ICLTopDirWarning,
+                "Failed to find Intel compiler for version='%s', abi='%s'"
+                % (str(version), str(abi)),
+            )
         else:
             # should be cleaned up to say what this other version is
             # since in this case we have some other Intel compiler installed
             SCons.Warnings.enableWarningClass(ICLTopDirWarning)
-            SCons.Warnings.warn(ICLTopDirWarning,
-                                "Can't find Intel compiler top dir for version='%s', abi='%s'"%
-                                    (str(version), str(abi)))
+            SCons.Warnings.warn(
+                ICLTopDirWarning,
+                "Can't find Intel compiler top dir for version='%s', abi='%s'"
+                % (str(version), str(abi)),
+            )
 
     if topdir:
         archdir={'x86_64': 'intel64',
@@ -576,11 +578,14 @@ def generate(env, version=None, abi=None, topdir=None, verbose=0):
                 class ICLLicenseDirWarning(SCons.Warnings.SConsWarning):
                     pass
                 SCons.Warnings.enableWarningClass(ICLLicenseDirWarning)
-                SCons.Warnings.warn(ICLLicenseDirWarning,
-                                    "Intel license dir was not found."
-                                    "  Tried using the INTEL_LICENSE_FILE environment variable (%s), the registry (%s) and the default path (%s)."
-                                    "  Using the default path as a last resort."
-                                        % (envlicdir, reglicdir, defaultlicdir))
+                SCons.Warnings.warn(
+                    ICLLicenseDirWarning,
+                    "Intel license dir was not found.  "
+                    "Tried using the INTEL_LICENSE_FILE environment variable "
+                    "(%s), the registry (%s) and the default path (%s).  "
+                    "Using the default path as a last resort."
+                    % (envlicdir, reglicdir, defaultlicdir)
+                )
         env['ENV']['INTEL_LICENSE_FILE'] = licdir
 
 def exists(env):

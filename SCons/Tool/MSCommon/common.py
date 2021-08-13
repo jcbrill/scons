@@ -168,7 +168,7 @@ def has_reg(value):
     try:
         SCons.Util.RegOpenKeyEx(SCons.Util.HKEY_LOCAL_MACHINE, value)
         ret = True
-    except SCons.Util.WinError:
+    except OSError:
         ret = False
     return ret
 

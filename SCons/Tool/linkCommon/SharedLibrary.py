@@ -166,8 +166,12 @@ def _get_shlib_dir(target, source, env, for_signature: bool) -> str:
     Returns:
         the directory the library will be in (empty string if '.')
     """
+    verbose = False
+
     if target.dir and str(target.dir) != ".":
-        print("target.dir:%s" % target.dir)
+        if verbose:
+            print("_get_shlib_dir: target.dir:%s" % target.dir)
+
         return "%s/" % str(target.dir)
     else:
         return ""
@@ -204,11 +208,11 @@ def setup_shared_lib_logic(env):
     env["SHLIBEMITTER"] = [lib_emitter, shlib_symlink_emitter]
 
     # If it's already set, then don't overwrite.
-    env["SHLIBPREFIX"] = env.get('SHLIBPREFIX',"lib")
+    env["SHLIBPREFIX"] = env.get('SHLIBPREFIX', "lib")
     env["_SHLIBSUFFIX"] = "${SHLIBSUFFIX}${_SHLIBVERSION}"
 
     env["SHLINKFLAGS"] = CLVar("$LINKFLAGS -shared")
 
     env["SHLINKCOM"] = "$SHLINK -o $TARGET $SHLINKFLAGS $__SHLIBVERSIONFLAGS $__RPATH $SOURCES $_LIBDIRFLAGS $_LIBFLAGS"
-    env["SHLINKCOMSTR"] = "$SHLINKCOM"
+
     env["SHLINK"] = "$LINK"

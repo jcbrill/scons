@@ -1,14 +1,6 @@
-"""SCons.Tool.install
-
-Tool-specific initialization for the install tool.
-
-There normally shouldn't be any need to import this module directly.
-It will usually be imported through the generic SCons.Tool.Tool()
-selection method.
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,11 +20,17 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
+
+""" Tool-specific initialization for the install tool.
+
+There normally shouldn't be any need to import this module directly.
+It will usually be imported through the generic SCons.Tool.Tool()
+selection method.
+"""
 
 import os
 import stat
-from shutil import copy2, copymode, copystat
+from shutil import copy2, copystat
 
 import SCons.Action
 import SCons.Tool
@@ -44,7 +42,6 @@ from SCons.Tool.linkCommon import (
     EmitLibSymlinks,
 )
 
-#
 # We keep track of *all* installed files.
 _INSTALLED_FILES = []
 _UNIQUE_INSTALLED_FILES = None
@@ -125,12 +122,17 @@ def scons_copytree(src, dst, symlinks=False, ignore=None, copy_function=copy2,
                         continue
                     # otherwise let the copy occurs. copy2 will raise an error
                     if os.path.isdir(srcname):
-                        scons_copytree(srcname, dstname, symlinks, ignore,
-                                       copy_function, dirs_exist_ok)
+                        scons_copytree(srcname, dstname, symlinks=symlinks,
+                                       ignore=ignore, copy_function=copy_function,
+                                       ignore_dangling_symlinks=ignore_dangling_symlinks,
+                                       dirs_exist_ok=dirs_exist_ok)
                     else:
                         copy_function(srcname, dstname)
             elif os.path.isdir(srcname):
-                scons_copytree(srcname, dstname, symlinks, ignore, copy_function, dirs_exist_ok)
+                scons_copytree(srcname, dstname, symlinks=symlinks,
+                               ignore=ignore, copy_function=copy_function,
+                               ignore_dangling_symlinks=ignore_dangling_symlinks,
+                               dirs_exist_ok=dirs_exist_ok)
             else:
                 # Will raise a SpecialFileError for unsupported file types
                 copy_function(srcname, dstname)

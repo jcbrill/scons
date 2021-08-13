@@ -31,7 +31,6 @@ The code that reads the registry to find MSVC components was borrowed
 from distutils.msvccompiler.
 """
 
-import errno
 import os
 import shutil
 import stat
@@ -43,9 +42,9 @@ import SCons.Builder
 import SCons.CacheDir
 import SCons.Environment
 import SCons.PathList
+import SCons.Scanner.Dir
 import SCons.Subst
 import SCons.Tool
-import SCons.Scanner.Dir
 
 # A placeholder for a default Environment (for fetching source files
 # from source code management systems and the like).  This must be
@@ -95,13 +94,13 @@ def DefaultEnvironment(*args, **kw):
 def StaticObjectEmitter(target, source, env):
     for tgt in target:
         tgt.attributes.shared = None
-    return (target, source)
+    return target, source
 
 
 def SharedObjectEmitter(target, source, env):
     for tgt in target:
         tgt.attributes.shared = 1
-    return (target, source)
+    return target, source
 
 
 def SharedFlagChecker(source, target, env):
@@ -292,7 +291,7 @@ def delete_func(dest, must_exist=0):
             continue
         # os.path.isdir returns True when entry is a link to a dir
         if os.path.isdir(entry) and not os.path.islink(entry):
-            shutil.rmtree(entry, 1)
+            shutil.rmtree(entry, True)
             continue
         os.unlink(entry)
 
@@ -309,20 +308,11 @@ def mkdir_func(dest):
     if not SCons.Util.is_List(dest):
         dest = [dest]
     for entry in dest:
-        try:
-            os.makedirs(str(entry))
-        except os.error as e:
-            p = str(entry)
-            if (e.args[0] == errno.EEXIST or
-                (sys.platform == 'win32' and e.args[0] == 183)) \
-                    and os.path.isdir(str(entry)):
-                pass  # not an error if already exists
-            else:
-                raise
+        os.makedirs(str(entry), exist_ok=True)
 
 
 Mkdir = ActionFactory(mkdir_func,
-                      lambda dir: 'Mkdir(%s)' % get_paths_str(dir))
+                      lambda _dir: 'Mkdir(%s)' % get_paths_str(_dir))
 
 
 def move_func(dest, src):
@@ -357,27 +347,38 @@ Touch = ActionFactory(touch_func,
 
 # Internal utility functions
 
-
-def _concat(prefix, iter, suffix, env, f=lambda x: x, target=None, source=None):
+# pylint: disable-msg=too-many-arguments
+def _concat(prefix, items_iter, suffix, env, f=lambda x: x, target=None, source=None, affect_signature=True):
     """
-    Creates a new list from 'iter' by first interpolating each element
+    Creates a new list from 'items_iter' by first interpolating each element
     in the list using the 'env' dictionary and then calling f on the
     list, and finally calling _concat_ixes to concatenate 'prefix' and
     'suffix' onto each element of the list.
     """
-    if not iter:
-        return iter
 
-    l = f(SCons.PathList.PathList(iter).subst_path(env, target, source))
+    if not items_iter:
+        return items_iter
+
+    l = f(SCons.PathList.PathList(items_iter).subst_path(env, target, source))
     if l is not None:
-        iter = l
+        items_iter = l
 
-    return _concat_ixes(prefix, iter, suffix, env)
+    if not affect_signature:
+        value = ['$(']
+    else:
+        value = []
+    value += _concat_ixes(prefix, items_iter, suffix, env)
+
+    if not affect_signature:
+        value += ["$)"]
+
+    return value
+# pylint: enable-msg=too-many-arguments
 
 
-def _concat_ixes(prefix, iter, suffix, env):
+def _concat_ixes(prefix, items_iter, suffix, env):
     """
-    Creates a new list from 'iter' by concatenating the 'prefix' and
+    Creates a new list from 'items_iter' by concatenating the 'prefix' and
     'suffix' arguments onto each element of the list.  A trailing space
     on 'prefix' or leading space on 'suffix' will cause them to be put
     into separate list elements rather than being concatenated.
@@ -389,7 +390,7 @@ def _concat_ixes(prefix, iter, suffix, env):
     prefix = str(env.subst(prefix, SCons.Subst.SUBST_RAW))
     suffix = str(env.subst(suffix, SCons.Subst.SUBST_RAW))
 
-    for x in SCons.Util.flatten(iter):
+    for x in SCons.Util.flatten(items_iter):
         if isinstance(x, SCons.Node.FS.File):
             result.append(x)
             continue
@@ -508,12 +509,12 @@ def processDefines(defs):
     return l
 
 
-def _defines(prefix, defs, suffix, env, c=_concat_ixes):
+def _defines(prefix, defs, suffix, env, target, source, c=_concat_ixes):
     """A wrapper around _concat_ixes that turns a list or string
     into a list of C preprocessor command-line definitions.
     """
 
-    return c(prefix, env.subst_list(processDefines(defs)), suffix, env)
+    return c(prefix, env.subst_list(processDefines(defs), target=target, source=source), suffix, env)
 
 
 class NullCmdGenerator:
@@ -616,9 +617,11 @@ ConstructionEnvironment = {
     '_defines': _defines,
     '_stripixes': _stripixes,
     '_LIBFLAGS': '${_concat(LIBLINKPREFIX, LIBS, LIBLINKSUFFIX, __env__)}',
-    '_LIBDIRFLAGS': '$( ${_concat(LIBDIRPREFIX, LIBPATH, LIBDIRSUFFIX, __env__, RDirs, TARGET, SOURCE)} $)',
-    '_CPPINCFLAGS': '$( ${_concat(INCPREFIX, CPPPATH, INCSUFFIX, __env__, RDirs, TARGET, SOURCE)} $)',
-    '_CPPDEFFLAGS': '${_defines(CPPDEFPREFIX, CPPDEFINES, CPPDEFSUFFIX, __env__)}',
+
+    '_LIBDIRFLAGS': '${_concat(LIBDIRPREFIX, LIBPATH, LIBDIRSUFFIX, __env__, RDirs, TARGET, SOURCE, affect_signature=False)}',
+    '_CPPINCFLAGS': '${_concat(INCPREFIX, CPPPATH, INCSUFFIX, __env__, RDirs, TARGET, SOURCE, affect_signature=False)}',
+
+    '_CPPDEFFLAGS': '${_defines(CPPDEFPREFIX, CPPDEFINES, CPPDEFSUFFIX, __env__, TARGET, SOURCE)}',
 
     '__libversionflags': __libversionflags,
     '__SHLIBVERSIONFLAGS': '${__libversionflags(__env__,"SHLIBVERSION","_SHLIBVERSIONFLAGS")}',
