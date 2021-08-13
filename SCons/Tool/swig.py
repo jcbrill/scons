@@ -1,14 +1,6 @@
-"""SCons.Tool.swig
-
-Tool-specific initialization for swig.
-
-There normally shouldn't be any need to import this module directly.
-It will usually be imported through the generic SCons.Tool.Tool()
-selection method.
-
-"""
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,20 +20,25 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Tool-specific initialization for swig.
+
+There normally shouldn't be any need to import this module directly.
+It will usually be imported through the generic SCons.Tool.Tool()
+selection method.
+"""
 
 import os.path
-import sys
 import re
 import subprocess
+import sys
 
 import SCons.Action
 import SCons.Defaults
+import SCons.Node
 import SCons.Tool
 import SCons.Util
-import SCons.Node
+import SCons.Warnings
 
 verbose = False
 
@@ -190,21 +187,26 @@ def generate(env):
             swig_bin_dir = os.path.dirname(swig)
             env.AppendENVPath('PATH', swig_bin_dir)
         else:
-            SCons.Warnings.SConsWarning('swig tool requested, but binary not found in ENV PATH')
+            SCons.Warnings.warn(
+                SCons.Warnings.SConsWarning,
+                'swig tool requested, but binary not found in ENV PATH'
+            )
 
     if 'SWIG' not in env:
         env['SWIG'] = env.Detect(swigs) or swigs[0]
-    env['SWIGVERSION']       = _get_swig_version(env, env['SWIG'])
-    env['SWIGFLAGS']         = SCons.Util.CLVar('')
+
+    env['SWIGVERSION'] = _get_swig_version(env, env['SWIG'])
+    env['SWIGFLAGS'] = SCons.Util.CLVar('')
     env['SWIGDIRECTORSUFFIX'] = '_wrap.h'
-    env['SWIGCFILESUFFIX']   = '_wrap$CFILESUFFIX'
+    env['SWIGCFILESUFFIX'] = '_wrap$CFILESUFFIX'
     env['SWIGCXXFILESUFFIX'] = '_wrap$CXXFILESUFFIX'
-    env['_SWIGOUTDIR']       = r'${"-outdir \"%s\"" % SWIGOUTDIR}'
-    env['SWIGPATH']          = []
-    env['SWIGINCPREFIX']     = '-I'
-    env['SWIGINCSUFFIX']     = ''
-    env['_SWIGINCFLAGS']     = '$( ${_concat(SWIGINCPREFIX, SWIGPATH, SWIGINCSUFFIX, __env__, RDirs, TARGET, SOURCE)} $)'
-    env['SWIGCOM']           = '$SWIG -o $TARGET ${_SWIGOUTDIR} ${_SWIGINCFLAGS} $SWIGFLAGS $SOURCES'
+    env['_SWIGOUTDIR'] = r'${"-outdir \"%s\"" % SWIGOUTDIR}'
+    env['SWIGPATH'] = []
+    env['SWIGINCPREFIX'] = '-I'
+    env['SWIGINCSUFFIX'] = ''
+    env['_SWIGINCFLAGS'] = '${_concat(SWIGINCPREFIX, SWIGPATH, SWIGINCSUFFIX,' \
+                            '__env__, RDirs, TARGET, SOURCE, affect_signature=False)}'
+    env['SWIGCOM'] = '$SWIG -o $TARGET ${_SWIGOUTDIR} ${_SWIGINCFLAGS} $SWIGFLAGS $SOURCES'
 
 def exists(env):
     swig = env.get('SWIG') or env.Detect(['swig'])

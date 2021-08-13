@@ -30,28 +30,29 @@ This holds a "default_fs" variable that should be initialized with an FS
 that can be used by scripts or modules looking for the canonical default.
 """
 
+import codecs
 import fnmatch
+import importlib.util
 import os
 import re
 import shutil
 import stat
 import sys
 import time
-import codecs
 from itertools import chain
-import importlib.util
+from typing import Optional
 
 import SCons.Action
 import SCons.Debug
-from SCons.Debug import logInstanceCreation, Trace
 import SCons.Errors
 import SCons.Memoize
 import SCons.Node
 import SCons.Node.Alias
 import SCons.Subst
 import SCons.Util
-from SCons.Util import hash_signature, hash_file_signature, hash_collect
 import SCons.Warnings
+from SCons.Debug import logInstanceCreation, Trace
+from SCons.Util import hash_signature, hash_file_signature, hash_collect
 
 print_duplicate = 0
 
@@ -1116,56 +1117,81 @@ class LocalFS:
     needs to use os.chdir() directly to avoid recursion.  Will we
     really need this one?
     """
-    #def chdir(self, path):
-    #    return os.chdir(path)
+
     def chmod(self, path, mode):
         return os.chmod(path, mode)
+
     def copy(self, src, dst):
         return shutil.copy(src, dst)
+
     def copy2(self, src, dst):
         return shutil.copy2(src, dst)
+
     def exists(self, path):
         return os.path.exists(path)
+
     def getmtime(self, path):
         return os.path.getmtime(path)
+
     def getsize(self, path):
         return os.path.getsize(path)
+
     def isdir(self, path):
         return os.path.isdir(path)
+
     def isfile(self, path):
         return os.path.isfile(path)
+
     def link(self, src, dst):
         return os.link(src, dst)
+
     def lstat(self, path):
         return os.lstat(path)
+
     def listdir(self, path):
         return os.listdir(path)
-    def makedirs(self, path):
-        return os.makedirs(path)
-    def mkdir(self, path):
-        return os.mkdir(path)
+
+    def scandir(self, path):
+        return os.scandir(path)
+
+    def makedirs(self, path, mode=0o777, exist_ok=False):
+        return os.makedirs(path, mode=mode, exist_ok=exist_ok)
+
+    def mkdir(self, path, mode=0o777):
+        return os.mkdir(path, mode=mode)
+
     def rename(self, old, new):
         return os.rename(old, new)
+
     def stat(self, path):
         return os.stat(path)
+
     def symlink(self, src, dst):
         return os.symlink(src, dst)
+
     def open(self, path):
         return open(path)
+
     def unlink(self, path):
         return os.unlink(path)
 
     if hasattr(os, 'symlink'):
+
         def islink(self, path):
             return os.path.islink(path)
+
     else:
+
         def islink(self, path):
-            return 0                    # no symlinks
+            return False  # no symlinks
 
     if hasattr(os, 'readlink'):
+
         def readlink(self, file):
             return os.readlink(file)
+
     else:
+
         def readlink(self, file):
             return ''
 
@@ -3182,7 +3208,7 @@ class File(Base):
     # SIGNATURE SUBSYSTEM
     #
 
-    def get_max_drift_csig(self) -> str:
+    def get_max_drift_csig(self) -> Optional[str]:
         """
         Returns the content signature currently stored for this node
         if it's been unmodified longer than the max_drift value, or the

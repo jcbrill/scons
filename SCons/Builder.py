@@ -103,12 +103,12 @@ from collections import UserDict, UserList
 
 import SCons.Action
 import SCons.Debug
-from SCons.Debug import logInstanceCreation
-from SCons.Errors import InternalError, UserError
 import SCons.Executor
 import SCons.Memoize
 import SCons.Util
 import SCons.Warnings
+from SCons.Debug import logInstanceCreation
+from SCons.Errors import InternalError, UserError
 
 class _Null:
     pass
@@ -612,6 +612,10 @@ class BuilderBase:
             t.add_source(slist)
             t.set_executor(executor)
             t.set_explicit(self.is_explicit)
+
+        if env.get("SCONF_NODE"):
+            for node in tlist:
+                node.attributes.conftest_node = 1
 
         return SCons.Node.NodeList(tlist)
 

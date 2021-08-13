@@ -107,12 +107,12 @@ scons: Reading SConscript files ...
   'TOOLS': ['msvc', 'install', 'install'],
   'VSWHERE': None,
   '_CCCOMCOM': '$CPPFLAGS $_CPPDEFFLAGS $_CPPINCFLAGS $CCPCHFLAGS $CCPDBFLAGS',
-  '_CPPDEFFLAGS': '${_defines(CPPDEFPREFIX, CPPDEFINES, CPPDEFSUFFIX, '
-                  '__env__)}',
-  '_CPPINCFLAGS': '$( ${_concat(INCPREFIX, CPPPATH, INCSUFFIX, __env__, RDirs, '
-                  'TARGET, SOURCE)} $)',
-  '_LIBDIRFLAGS': '$( ${_concat(LIBDIRPREFIX, LIBPATH, LIBDIRSUFFIX, __env__, '
-                  'RDirs, TARGET, SOURCE)} $)',
+  '_CPPDEFFLAGS': '${_defines(CPPDEFPREFIX, CPPDEFINES, CPPDEFSUFFIX, __env__, '
+                  'TARGET, SOURCE)}',
+  '_CPPINCFLAGS': '${_concat(INCPREFIX, CPPPATH, INCSUFFIX, __env__, RDirs, '
+                  'TARGET, SOURCE, affect_signature=False)}',
+  '_LIBDIRFLAGS': '${_concat(LIBDIRPREFIX, LIBPATH, LIBDIRSUFFIX, __env__, '
+                  'RDirs, TARGET, SOURCE, affect_signature=False)}',
   '_LIBFLAGS': '${_concat(LIBLINKPREFIX, LIBS, LIBLINKSUFFIX, __env__)}',
   '_MSVC_OUTPUT_FLAG': &lt;function msvc_output_flag at 0x700000&gt;,
   '__DSHLIBVERSIONFLAGS': '${__libversionflags(__env__,"DSHLIBVERSION","_DSHLIBVERSIONFLAGS")}',

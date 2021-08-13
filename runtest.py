@@ -157,6 +157,7 @@ if args.testlistfile:
     # args.testlistfile changes from a string to a pathlib Path object
     try:
         p = Path(args.testlistfile)
+        # TODO simplify when Py3.5 dropped
         if sys.version_info.major == 3 and sys.version_info.minor < 6:
             args.testlistfile = p.resolve()
         else:
@@ -172,6 +173,7 @@ if args.excludelistfile:
     # args.excludelistfile changes from a string to a pathlib Path object
     try:
         p = Path(args.excludelistfile)
+        # TODO simplify when Py3.5 dropped
         if sys.version_info.major == 3 and sys.version_info.minor < 6:
             args.excludelistfile = p.resolve()
         else:
@@ -199,11 +201,8 @@ if args.short_progress:
     suppress_output = catch_output = True
 
 if args.debug:
-    for d in sys.path:
-        pdb = os.path.join(d, 'pdb.py')
-        if os.path.exists(pdb):
-            debug = pdb
-        break
+    # TODO: add a way to pass a specific debugger
+    debug = "pdb"
 
 if args.exec:
     scons = args.exec
@@ -566,14 +565,23 @@ def find_e2e_tests(directory):
         # Skip folders containing a sconstest.skip file
         if 'sconstest.skip' in filenames:
             continue
-        try:
-            with open(os.path.join(dirpath, ".exclude_tests")) as f:
+
+        # Slurp in any tests in exclude lists
+        excludes = []
+        if ".exclude_tests" in filenames:
+            p = Path(dirpath).joinpath(".exclude_tests")
+            # TODO simplify when Py3.5 dropped
+            if sys.version_info.major == 3 and sys.version_info.minor < 6:
+                excludefile = p.resolve()
+            else:
+                excludefile = p.resolve(strict=True)
+            with excludefile.open() as f:
                 excludes = scanlist(f)
-        except EnvironmentError:
-            excludes = []
+
         for fname in filenames:
             if fname.endswith(".py") and fname not in excludes:
                 result.append(os.path.join(dirpath, fname))
+
     return sorted(result)
 
 
@@ -710,7 +718,7 @@ def run_test(t, io_lock=None, run_async=True):
     t.headline = ""
     command_args = []
     if debug:
-        command_args.append(debug)
+        command_args.extend(['-m', debug])
     if args.devmode and sys.version_info >= (3, 7, 0):
         command_args.append('-X dev')
     command_args.append(t.path)
