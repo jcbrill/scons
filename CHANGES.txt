@@ -9,7 +9,10 @@ NOTE: The 4.2.0 Release of SCons will deprecate Python 3.5 Support. Python 3.5 s
 
 RELEASE  VERSION/DATE TO BE FILLED IN LATER
 
-      
+  From Joseph Brill:
+    - Fix MSVS tests (vs-N.N-exec.py) for MSVS 6.0, 7.0, and 7.1 (import missing module).
+    - Add support for Visual Studio 2022 (release and prerelease).
+
   From William Deegan:
     - Fix reproducible builds. Restore logic respecting SOURCE_DATE_EPOCH when set.
     - Fix version tests to work with updated scons --version output. (Date format changed)
@@ -21,6 +24,9 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       introduced by Aaron Franke (listed below) were merged.
     - Further PCH updates. It's now recommended that env['PCH'] should always be a File node.
       Either via return value from env.PCH() or by explicitly using File('StdAfx.pch').
+    - Added --no-ignore-skips to runtest.py. Changed default to ignore skips when setting
+      runtest.py's exit status. Previously would exit 2 if any tests were skipped.
+      Now will only exit 2 if user specifies --no-ignore-skips and some tests were skipped.
 
   From Ryan Egesdahl:
     - Small fix to ensure CLVar default value is an empty list.
@@ -34,7 +40,17 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
   From Daniel Moody:
     - Fix ninja tool to never use for_sig substitution because ninja does not use signatures. This
       issue affected CommandGeneratorAction function actions specifically.
+    - Expanded ninja Mkdir to also support Mkdir actions.
     - Added support for the PCH environment variable to support subst generators. 
+    - Fix command line escaping for ninja dollar sign escape. Without escaping ninja properly,
+      the ninja file scons regenerate and callback invocations will lose the $ characters used in
+      the scons command line which ninja uses itself for escaping. For Example:
+          scons BUILD=xyz OTHERVAR=$BUILD
+      Prior to this fix, it would cause ninja to fail to escape the dollar sign, leading to the 
+      single dollar sign being used as a ninja escape character in the ninja file.
+
+  From Daniel Moody:
+    - Added ninja API 'NINJA_FORCE_SCONS_BUILD' to force a node to callback to scons.
 
   From Mats Wichmann:
     - Two small Python 3.10 fixes: one more docstring turned into raw
@@ -53,6 +69,26 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       Added new sconsign filenames to skip_entry_list in Scanner/Dir.py
     - Change SCons.Scanner.Base to ScannerBase. Old name kept as an alias
       but is now unused in SCons itself.
+    - Call Variables option converter consistently - the converter should
+      have access to the env if it needs to (issue #2064).
+    - Fixed the variables Add() method to accept a tuple for the variable
+      name the same way AddVariables() does (issue #3869).
+    - The premade validator PathIsDirCreate for for PathVariable now catches
+      the case where the directory could not be created due to permission
+      problems, allowing a more helpful error to be emitted (issue #2828)
+    - Maintenance: Python thread.setDaemon is deprecated in favor of
+      directly updating daemon attribute - update SCons to do this.
+    - Make sure when subst'ing a callable, the callable is called with
+      the correct for_signature value, previously it would be true even
+      if doing SUBST_RAW (issue #4037)
+    - Update Util/NodeList implementation to get rid of a workaround for
+      early Python 3 slicing issue that is no longer a problem.
+    - Rework some Java tests to skip rather than fail on CI systems, where
+      the working java is > v9, but a 1.8 or 9 was also found.
+
+  From Brian Quistorff:
+    - Fix crash when scons is run from a python environement where a signal
+      is set from outside Python.
 
 
 RELEASE 4.2.0 - Sat, 31 Jul 2021 18:12:46 -0700
