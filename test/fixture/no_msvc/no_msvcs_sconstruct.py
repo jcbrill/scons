@@ -1,7 +1,7 @@
 import SCons
 import SCons.Tool.MSCommon
 
-def DummyVsWhere(msvc_version, env):
+def DummyVsWhere(msvc_version, env, release_override_value=None):
     # not testing versions with vswhere, so return none
     return None
 

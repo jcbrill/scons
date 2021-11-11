@@ -25,8 +25,6 @@
 """Module for Visual C/C++ detection and configuration.
 
 # TODO:
-#   * gather all the information from a single vswhere call instead
-#     of calling repeatedly (use json format?)
 #   * support passing/setting location for vswhere in env.
 #   * supported arch for versions: for old versions of batch file without
 #     argument, giving bogus argument cannot be detected, so we have to hardcode
@@ -46,6 +44,10 @@ import os
 import platform
 from string import digits as string_digits
 from subprocess import PIPE
+
+import json
+from collections import namedtuple
+from functools import cmp_to_key
 
 import SCons.Warnings
 from SCons.Tool import find_program_path
@@ -244,24 +246,22 @@ _VCVER = [
     "7.0",
     "6.0"]
 
-# if using vswhere, configure command line arguments to probe for installed VC editions
-_VCVER_TO_VSWHERE_VER = {
-    '14.3': [
-        ["-version", "[17.0, 18.0)"],  # default: Enterprise, Professional, Community  (order unpredictable?)
-        ["-version", "[17.0, 18.0)", "-products", "Microsoft.VisualStudio.Product.BuildTools"],  # BuildTools
-    ],
-    '14.2': [
-        ["-version", "[16.0, 17.0)"],  # default: Enterprise, Professional, Community  (order unpredictable?)
-        ["-version", "[16.0, 17.0)", "-products", "Microsoft.VisualStudio.Product.BuildTools"],  # BuildTools
-    ],
-    '14.1': [
-        ["-version", "[15.0, 16.0)"],  # default: Enterprise, Professional, Community (order unpredictable?)
-        ["-version", "[15.0, 16.0)", "-products", "Microsoft.VisualStudio.Product.BuildTools"],  # BuildTools
-    ],
-    '14.1Exp': [
-        ["-version", "[15.0, 16.0)", "-products", "Microsoft.VisualStudio.Product.WDExpress"],  # Express
-    ],
-}
+# If using single vswhere json query:
+#    map vs major version to vc version (no suffix)
+#    build set of supported vc versions (including suffix)
+_VSWHERE_VSMAJOR_TO_VCVERSION = {}
+_VSWHERE_SUPPORTED_VCVER = set()
+
+for vs_major, vc_version, vc_ver_list in (
+    ('17', '14.3', None),
+    ('16', '14.2', None),
+    ('15', '14.1', ['14.1Exp']),
+):
+    _VSWHERE_VSMAJOR_TO_VCVERSION[vs_major] = vc_version
+    _VSWHERE_SUPPORTED_VCVER.add(vc_version)
+    if vc_ver_list:
+        for vc_ver in vc_ver_list:
+            _VSWHERE_SUPPORTED_VCVER.add(vc_ver)
 
 _VCVER_TO_PRODUCT_DIR = {
     '14.3': [
@@ -317,6 +317,36 @@ _VCVER_TO_PRODUCT_DIR = {
         (SCons.Util.HKEY_LOCAL_MACHINE, r'Microsoft\VisualStudio\6.0\Setup\Microsoft Visual C++\ProductDir'),
     ]
 }
+
+# If using single vwhere json query:
+#    build of set of candidate component ids
+#    preferred ranking: Enterprise, Professional, Community, BuildTools, Express
+#      Ent, Pro, Com, and BT are in the same list without Exp
+#      Exp is in it's own list
+#    currently, only the express (Exp) suffix is expected
+_VSWHERE_COMPONENTID_CANDIDATES = set()
+_VSWHERE_COMPONENTID_RANKING = {}
+_VSWHERE_COMPONENTID_SUFFIX = {}
+_VSWHERE_COMPONENTID_SCONS_SUFFIX = {}
+
+for component_id, component_rank, component_suffix, scons_suffix in (
+    ('Enterprise',   140, 'Ent', ''),
+    ('Professional', 130, 'Pro', ''),
+    ('Community',    120, 'Com', ''),
+    ('BuildTools',   110, 'BT',  ''),
+    ('WDExpress',    100, 'Exp', 'Exp'),
+):
+    _VSWHERE_COMPONENTID_CANDIDATES.add(component_id)
+    _VSWHERE_COMPONENTID_RANKING[component_id] = component_rank
+    _VSWHERE_COMPONENTID_SUFFIX[component_id] = component_suffix
+    _VSWHERE_COMPONENTID_SCONS_SUFFIX[component_id] = scons_suffix
+
+# when finding all versions, check preview/prelease as well
+_VCVER_SETUP = []
+for vc_ver in _VCVER:
+    _VCVER_SETUP.append((vc_ver, True))
+    if vc_ver in _VSWHERE_SUPPORTED_VCVER:
+        _VCVER_SETUP.append((vc_ver, False))
 
 
 def msvc_version_to_maj_min(msvc_version):
@@ -377,12 +407,193 @@ def msvc_find_vswhere():
 
     return vswhere_path
 
-def find_vc_pdir_vswhere(msvc_version, env=None):
+def _vswhere_query_json(vswhere_args, env=None):
+    """ Find MSVC instances using the vswhere program.
+
+    Args:
+        vswhere_args: query arguments passed to vswhere
+        env: optional to look up VSWHERE variable
+
+    Returns:
+        json output or None
+
+    """
+
+    if env is None or not env.get('VSWHERE'):
+        vswhere_path = msvc_find_vswhere()
+    else:
+        vswhere_path = env.subst('$VSWHERE')
+
+    if vswhere_path is None:
+        debug("vswhere path not found")
+        return None
+
+    debug('VSWHERE = %s' % vswhere_path)
+
+    vswhere_cmd = [vswhere_path] + vswhere_args + ['-format', 'json', '-utf8']
+
+    debug("running: %s" % vswhere_cmd)
+
+    #cp = subprocess.run(vswhere_cmd, capture_output=True)  # 3.7+ only
+    cp = subprocess.run(vswhere_cmd, stdout=PIPE, stderr=PIPE)
+    if not cp.stdout:
+        debug("no vswhere information returned")
+        return None
+
+    # TODO: decode error strict?
+    vswhere_output = cp.stdout.decode('utf8', errors='replace')
+    if not vswhere_output:
+        debug("no vswhere information output")
+        return None
+
+    try:
+        vswhere_json = json.loads(vswhere_output)
+    except json.decoder.JSONDecodeError:
+        debug("json decode exception loading vswhere output")
+        vswhere_json = None
+
+    return vswhere_json
+
+__VSWHERE_VCS_RUN = None
+
+def _get_vswhere_msvc_dict(env=None):
+    global __VSWHERE_VCS_RUN
+
+    if __VSWHERE_VCS_RUN is not None:
+        return __VSWHERE_VCS_RUN
+
+    _vswhere_msvc_dict = {}
+
+    vswhere_args = ['-all', '-products', '*', '-prerelease']
+
+    vswhere_json = _vswhere_query_json(vswhere_args, env)
+
+    if vswhere_json:
+
+        MSVC_INSTANCE = namedtuple('MSVCInstance', [
+            'vc_path',
+            'vc_version',
+            'vc_version_numeric',
+            'vc_version_scons',
+            'vc_release',
+            'vc_component_id',
+            'vc_component_rank',
+            'vc_component_suffix',
+        ])
+
+        msvc_instances = []
+
+        for instance in vswhere_json:
+
+            #print(json.dumps(instance, indent=4, sort_keys=True))
+
+            productId = instance.get('productId','')
+            if not productId:
+                debug('productId not found in vswhere output')
+                continue
+
+            installationPath = instance.get('installationPath','')
+            if not installationPath:
+                debug('installationPath not found in vswhere output')
+                continue
+
+            vs_root = os.path.normpath(installationPath)
+            if not os.path.exists(vs_root):
+                debug('installationPath does not exist')
+                continue
+
+            vc_root = os.path.join(vs_root, 'VC')
+            if not os.path.exists(vc_root):
+                debug('VC path does not exist')
+                continue
+
+            installationVersion = instance.get('installationVersion','')
+            if not installationVersion:
+                debug('installationVersion not found in vswhere output')
+                continue
+
+            vs_major = installationVersion.split('.')[0]
+            if not vs_major in _VSWHERE_VSMAJOR_TO_VCVERSION:
+                debug('ignore vs_major: {}'.format(vs_major))
+
+            vc_version = _VSWHERE_VSMAJOR_TO_VCVERSION[vs_major]
+
+            component_id = productId.split('.')[-1]
+            if component_id not in _VSWHERE_COMPONENTID_CANDIDATES:
+                debug('ignore component_id: {}'.format(component_id))
+                continue
+
+            component_rank = _VSWHERE_COMPONENTID_RANKING.get(component_id,0)
+            if component_rank == 0:
+                raise InternalError('unknown component_rank for component_id: {}'.format(component_id))
+
+            component_suffix = _VSWHERE_COMPONENTID_SUFFIX[component_id]
+
+            scons_suffix = _VSWHERE_COMPONENTID_SCONS_SUFFIX[component_id]
+
+            if scons_suffix:
+                vc_version_scons = vc_version + scons_suffix
+            else:
+                vc_version_scons = vc_version
+
+            isPrerelease = True if instance.get('isPrerelease', False) else False
+            isRelease = False if isPrerelease else True
+
+            msvc_instance = MSVC_INSTANCE(
+                vc_path = vc_root,
+                vc_version = vc_version,
+                vc_version_numeric = float(vc_version),
+                vc_version_scons = vc_version_scons,
+                vc_release = isRelease,
+                vc_component_id = component_id,
+                vc_component_rank = component_rank,
+                vc_component_suffix = component_suffix,
+            )
+
+            msvc_instances.append(msvc_instance)
+
+        if len(msvc_instances) > 1:
+
+            def msvc_instances_default_order(a, b):
+                # vc version numeric: descending order
+                if a.vc_version_numeric != b.vc_version_numeric:
+                    return 1 if a.vc_version_numeric < b.vc_version_numeric else -1
+                # vc release: descending order (release, preview)
+                if a.vc_release != b.vc_release:
+                    return 1 if a.vc_release < b.vc_release else -1
+                # component rank: descending order
+                if a.vc_component_rank != b.vc_component_rank:
+                    return 1 if a.vc_component_rank < b.vc_component_rank else -1
+                return 0
+
+            msvc_instances = sorted(msvc_instances, key=cmp_to_key(msvc_instances_default_order))
+
+        if msvc_instances:
+            for msvc_instance in msvc_instances:
+                key = (msvc_instance.vc_version_scons, msvc_instance.vc_release)
+                _vswhere_msvc_dict.setdefault(key,[]).append(msvc_instance)
+
+    __VSWHERE_VCS_RUN = _vswhere_msvc_dict
+    return __VSWHERE_VCS_RUN
+
+def _msvc_isrelease(env=None, release_override_value=None):
+    release = True
+    if release_override_value is not None:
+        if not release_override_value:
+            release = False
+    elif env:
+        preview = env.get('MSVC_PREVIEW', None)
+        if preview and preview in ('1',):
+            release = False
+    return release
+
+def find_vc_pdir_vswhere(msvc_version, env=None, release_override_value=None):
     """ Find the MSVC product directory using the vswhere program.
 
     Args:
         msvc_version: MSVC version to search for
-        env: optional to look up VSWHERE variable
+        env: optional to look up VSWHERE and MSVC_PREVIEW variables
+        release_override_value: optional release value to use in place of env lookup for preview
 
     Returns:
         MSVC install dir or None
@@ -391,55 +602,42 @@ def find_vc_pdir_vswhere(msvc_version, env=None):
         UnsupportedVersion: if the version is not known by this file
 
     """
-    try:
-        vswhere_version = _VCVER_TO_VSWHERE_VER[msvc_version]
-    except KeyError:
+
+    vc_path = None
+
+    if msvc_version not in _VSWHERE_SUPPORTED_VCVER:
         debug("Unknown version of MSVC: %s" % msvc_version)
         raise UnsupportedVersion("Unknown version %s" % msvc_version)
 
-    if env is None or not env.get('VSWHERE'):
-        vswhere_path = msvc_find_vswhere()
-    else:
-        vswhere_path = env.subst('$VSWHERE')
+    vswhere_msvc_dict = _get_vswhere_msvc_dict(env)
 
-    if vswhere_path is None:
-        return None
+    release = _msvc_isrelease(env, release_override_value)
 
-    debug('VSWHERE: %s' % vswhere_path)
-    for vswhere_version_args in vswhere_version:
+    key = (msvc_version, release)
+    try:
+        msvc_instance_list = vswhere_msvc_dict[key]
+    except KeyError:
+        debug('msvc instance lookup failed: {}'.format(repr(key)))
+        msvc_instance_list = None
 
-        vswhere_cmd = [vswhere_path] + vswhere_version_args + ["-property", "installationPath"]
+    if msvc_instance_list:
+        msvc_instance = msvc_instance_list[0]
+        vc_path = msvc_instance.vc_path
 
-        debug("running: %s" % vswhere_cmd)
+    return vc_path
 
-        #cp = subprocess.run(vswhere_cmd, capture_output=True)  # 3.7+ only
-        cp = subprocess.run(vswhere_cmd, stdout=PIPE, stderr=PIPE)
-
-        if cp.stdout:
-            # vswhere could return multiple lines, e.g. if Build Tools
-            # and {Community,Professional,Enterprise} are both installed.
-            # We could define a way to pick the one we prefer, but since
-            # this data is currently only used to make a check for existence,
-            # returning the first hit should be good enough.
-            lines = cp.stdout.decode("mbcs").splitlines()
-            return os.path.join(lines[0], 'VC')
-        else:
-            # We found vswhere, but no install info available for this version
-            pass
-
-    return None
-
-
-def find_vc_pdir(env, msvc_version):
+def find_vc_pdir(env, msvc_version, release_override_value=None):
     """Find the MSVC product directory for the given version.
 
     Tries to look up the path using a registry key from the table
-    _VCVER_TO_PRODUCT_DIR; if there is no key, calls find_vc_pdir_wshere
+    _VCVER_TO_PRODUCT_DIR; if there is no key, calls find_vc_pdir_vswhere
     for help instead.
 
     Args:
         msvc_version: str
             msvc version (major.minor, e.g. 10.0)
+        release_override_value: bool or None
+            optional release value to use in place of env lookup for preview
 
     Returns:
         str: Path found in registry, or None
@@ -462,7 +660,7 @@ def find_vc_pdir(env, msvc_version):
         try:
             comps = None
             if not key:
-                comps = find_vc_pdir_vswhere(msvc_version, env)
+                comps = find_vc_pdir_vswhere(msvc_version, env, release_override_value)
                 if not comps:
                     debug('no VC found for version {}'.format(repr(msvc_version)))
                     raise OSError
@@ -678,22 +876,27 @@ def _check_cl_exists_in_vc_dir(env, vc_dir, msvc_version):
 
     return False
 
-def get_installed_vcs(env=None):
+def get_installed_vcs(env=None, release_override_value=None):
     global __INSTALLED_VCS_RUN
 
+    release_key = _msvc_isrelease(env, release_override_value)
+
     if __INSTALLED_VCS_RUN is not None:
-        return __INSTALLED_VCS_RUN
+        return __INSTALLED_VCS_RUN[release_key]
 
-    installed_versions = []
+    installed_versions = {
+        True:  [], # Release versions
+        False: [], # Preview versions
+    }
 
-    for ver in _VCVER:
+    for ver, release_value in _VCVER_SETUP:
         debug('trying to find VC %s' % ver)
         try:
-            VC_DIR = find_vc_pdir(env, ver)
+            VC_DIR = find_vc_pdir(env, ver, release_override_value=release_value)
             if VC_DIR:
                 debug('found VC %s' % ver)
                 if _check_cl_exists_in_vc_dir(env, VC_DIR, ver):
-                    installed_versions.append(ver)
+                    installed_versions[release_value].append(ver)
                 else:
                     debug('no compiler found %s' % ver)
             else:
@@ -706,12 +909,14 @@ def get_installed_vcs(env=None):
             debug('did not find VC %s: caught exception %s' % (ver, str(e)))
 
     __INSTALLED_VCS_RUN = installed_versions
-    return __INSTALLED_VCS_RUN
+    return __INSTALLED_VCS_RUN[release_key]
 
 def reset_installed_vcs():
     """Make it try again to find VC.  This is just for the tests."""
     global __INSTALLED_VCS_RUN
+    global __VSWHERE_VCS_RUN
     __INSTALLED_VCS_RUN = None
+    __VSWHERE_VCS_RUN = None
 
 # Running these batch files isn't cheap: most of the time spent in
 # msvs.generate() is due to vcvars*.bat.  In a build that uses "tools='msvs'"
@@ -857,8 +1062,9 @@ def msvc_find_valid_batch_script(env, version):
         debug("trying target_platform:%s" % tp)
         host_target = (host_platform, tp)
         if not is_host_target_supported(host_target, version):
-            warn_msg = "host, target = %s not supported for MSVC version %s" % \
-                (host_target, version)
+            preview = ' Preview' if not _msvc_isrelease(env) else ''
+            warn_msg = "host, target = %s not supported for MSVC version %s%s" % \
+                (host_target, version, preview)
             SCons.Warnings.warn(SCons.Warnings.VisualCMissingWarning, warn_msg)
         arg = _HOST_TARGET_ARCH_TO_BAT_ARCH[host_target]
 
@@ -869,10 +1075,11 @@ def msvc_find_valid_batch_script(env, version):
         except VisualCException as e:
             msg = str(e)
             debug('Caught exception while looking for batch file (%s)' % msg)
-            warn_msg = "VC version %s not installed.  " + \
+            preview = ' Preview' if not _msvc_isrelease(env) else ''
+            warn_msg = "VC version %s%s not installed.  " + \
                        "C/C++ compilers are most likely not set correctly.\n" + \
                        " Installed versions are: %s"
-            warn_msg = warn_msg % (version, get_installed_vcs(env))
+            warn_msg = warn_msg % (version, preview, get_installed_vcs(env))
             SCons.Warnings.warn(SCons.Warnings.VisualCMissingWarning, warn_msg)
             continue
 
@@ -966,8 +1173,8 @@ def msvc_setup_env(env):
         warn_msg = "Could not find MSVC compiler 'cl'. {}".format(propose)
         SCons.Warnings.warn(SCons.Warnings.VisualCMissingWarning, warn_msg)
 
-def msvc_exists(env=None, version=None):
-    vcs = get_installed_vcs(env)
+def msvc_exists(env=None, version=None, release_override_value=None):
+    vcs = get_installed_vcs(env, release_override_value)
     if version is None:
         return len(vcs) > 0
     return version in vcs
