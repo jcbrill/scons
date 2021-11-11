@@ -407,6 +407,59 @@ def msvc_find_vswhere():
 
     return vswhere_path
 
+# TODO: *REMOVE: NOT USED* (restored to make diff easier to read)
+def find_vc_pdir_vswhere_notused(msvc_version, env=None):
+    """ Find the MSVC product directory using the vswhere program.
+
+    Args:
+        msvc_version: MSVC version to search for
+        env: optional to look up VSWHERE variable
+
+    Returns:
+        MSVC install dir or None
+
+    Raises:
+        UnsupportedVersion: if the version is not known by this file
+
+    """
+    try:
+        vswhere_version = _VCVER_TO_VSWHERE_VER[msvc_version]
+    except KeyError:
+        debug("Unknown version of MSVC: %s" % msvc_version)
+        raise UnsupportedVersion("Unknown version %s" % msvc_version)
+
+    if env is None or not env.get('VSWHERE'):
+        vswhere_path = msvc_find_vswhere()
+    else:
+        vswhere_path = env.subst('$VSWHERE')
+
+    if vswhere_path is None:
+        return None
+
+    debug('VSWHERE: %s' % vswhere_path)
+    for vswhere_version_args in vswhere_version:
+
+        vswhere_cmd = [vswhere_path] + vswhere_version_args + ["-property", "installationPath"]
+
+        debug("running: %s" % vswhere_cmd)
+
+        #cp = subprocess.run(vswhere_cmd, capture_output=True)  # 3.7+ only
+        cp = subprocess.run(vswhere_cmd, stdout=PIPE, stderr=PIPE)
+
+        if cp.stdout:
+            # vswhere could return multiple lines, e.g. if Build Tools
+            # and {Community,Professional,Enterprise} are both installed.
+            # We could define a way to pick the one we prefer, but since
+            # this data is currently only used to make a check for existence,
+            # returning the first hit should be good enough.
+            lines = cp.stdout.decode("mbcs").splitlines()
+            return os.path.join(lines[0], 'VC')
+        else:
+            # We found vswhere, but no install info available for this version
+            pass
+
+    return None
+
 def _vswhere_query_json(vswhere_args, env=None):
     """ Find MSVC instances using the vswhere program.
 
