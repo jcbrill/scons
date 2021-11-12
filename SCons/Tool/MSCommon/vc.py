@@ -636,7 +636,7 @@ def _msvc_isrelease(env=None, release_override_value=None):
             release = False
     elif env:
         preview = env.get('MSVC_PREVIEW', None)
-        if preview and preview in ('1',):
+        if preview and preview in (True,):
             release = False
     return release
 
