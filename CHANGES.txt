@@ -9,9 +9,17 @@ NOTE: The 4.2.0 Release of SCons will deprecate Python 3.5 Support. Python 3.5 s
 
 RELEASE  VERSION/DATE TO BE FILLED IN LATER
 
+  From Jacob Cassagnol:
+    - Default hash algorithm check updated for SCons FIPS compliance. Now checks for hash viability
+      first and then walks the tree to use the first viable hash as the default one. This typically
+      selects SHA1 on FIPS-enabled systems less than Python 3.9 as the new default instead of MD5,
+      unless SHA1 has also been disabled by security policy, at which point SCons selects SHA256
+      as the default. For systems running Python 3.9 and later, the hashlib bug has been fixed,
+      and SCons will once again default to MD5 as the preferred algorithm.
+
   From Joseph Brill:
     - Fix MSVS tests (vs-N.N-exec.py) for MSVS 6.0, 7.0, and 7.1 (import missing module).
-    - Add support for Visual Studio 2022 (release and prerelease).
+    - Add support for Visual Studio 2022.
 
   From William Deegan:
     - Fix reproducible builds. Restore logic respecting SOURCE_DATE_EPOCH when set.
@@ -31,6 +39,9 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
   From Ryan Egesdahl:
     - Small fix to ensure CLVar default value is an empty list.
       See MongoDB bug report: https://jira.mongodb.org/browse/SERVER-59656
+      Code contributed by MongoDB.
+    - Ninja - Fixed an issue where if you control-c and/or killed ninja while it was running scons to 
+      regenerate build.ninja you would end up with no build.ninja file and have to rerun scons from scratch.
       Code contributed by MongoDB.
 
   From Aaron Franke:
@@ -85,6 +96,14 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       early Python 3 slicing issue that is no longer a problem.
     - Rework some Java tests to skip rather than fail on CI systems, where
       the working java is > v9, but a 1.8 or 9 was also found.
+    - Java updates: on Windows, detect more default JDK install locations.
+      On all platforms, more Java versions (up to 17.0 now).  Add more information
+      on version selection to docs.
+      Update docs on JavaH tool in light of javah command dropped since 10.0. 
+      Try to be better about preserving user's passed-in JAVA* construction vars.
+    - Start the deprecation of the qt tool, which refers to Qt3 (usupported
+      since around 2006). There's a deprecation warning added, initially
+      defaulting to disabled.
 
   From Brian Quistorff:
     - Fix crash when scons is run from a python environement where a signal
@@ -735,6 +754,9 @@ RELEASE 3.1.0 - Mon, 20 Jul 2019 16:59:23 -0700
 
   From Lukas Schrangl:
     - Enable LaTeX scanner to find more than one include per line
+
+  From  Sergey Torokhov:
+    - Recognize jdk on Gentoo systems.
 
   From Mats Wichmann:
     - scons-time takes more care closing files and uses safer mkdtemp to avoid
