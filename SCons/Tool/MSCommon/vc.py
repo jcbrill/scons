@@ -102,6 +102,7 @@ class MSVCTargetNotFound(VisualCException):
 class MSVCToolsetNotFound(VisualCException):
     pass
 
+
 # Dict to 'canonalize' the arch
 _ARCH_TO_CANONICAL = {
     "amd64"     : "amd64",
