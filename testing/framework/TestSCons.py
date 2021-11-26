@@ -55,10 +55,10 @@ from TestCmd import PIPE
 # here provides some independent verification that what we packaged
 # conforms to what we expect.
 
-default_version = '4.3.0ayyyymmdd'
+default_version = '4.3.1ayyyymmdd'
 
 # TODO: these need to be hand-edited when there are changes
-python_version_unsupported = (3, 4, 0)
+python_version_unsupported = (3, 6, 0)
 python_version_deprecated = (3, 6, 0)
 python_version_supported_str = "3.6.0"  # str of lowest non-deprecated version
 
