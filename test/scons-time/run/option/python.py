@@ -30,33 +30,35 @@ Verify the run --python option to specify an alternatie Python executable.
 import os
 
 import TestSCons_time
-from TestCmd import IS_WINDOWS
 
-_python_ = TestSCons_time._python_
+from TestCmd import NEED_HELPER
+from TestSCons_time import _python_
 
 test = TestSCons_time.TestSCons_time()
-if IS_WINDOWS:
-    # tests expect Windows file assoc to run my_python, not in our control.
-    test.skip_test("Skipping test on win32 due to launch problems.")
+
+if NEED_HELPER:
+    test.skip_test("Test host cannot directly execute scripts, skipping test\n")
 
 test.write_sample_project('foo.tar.gz')
 
 my_python_py = test.workpath('my_python.py')
 
-test.write(my_python_py, """\
-#!%(_python_)s
+test.write(
+    my_python_py,
+    fr"""#!{_python_}
 import sys
 profile = ''
 for arg in sys.argv[1:]:
     if arg.startswith('--profile='):
         profile = arg[10:]
         break
-sys.stdout.write('my_python.py: %%s\\n' %% profile)
-""" % locals())
+print('my_python.py: %s' % profile)
+""",
+)
 
 os.chmod(my_python_py, 0o755)
 
-test.run(arguments = 'run --python %s foo.tar.gz' % my_python_py)
+test.run(arguments='run --python %s foo.tar.gz' % my_python_py)
 
 prof0 = test.workpath('foo-000-0.prof')
 prof1 = test.workpath('foo-000-1.prof')
