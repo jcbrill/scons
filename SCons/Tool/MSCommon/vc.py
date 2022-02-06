@@ -81,6 +81,9 @@ class BatchFileExecutionError(VisualCException):
 class MSVCScriptNotFound(VisualCException):
     pass
 
+class InternalError(VisualCException):
+    pass
+
 # Dict to 'canonalize' the arch
 _ARCH_TO_CANONICAL = {
     "amd64"     : "amd64",
