@@ -29,8 +29,11 @@ from .config import _MSCONFIG
 
 if _MSCONFIG.DEBUG_STDOUT:
 
-    def debug(message):
-        print(message)
+    def debug(message, *args):
+        if args:
+            print(message % args)
+        else:
+            print(message)
 
 elif _MSCONFIG.DEBUG_LOGGING:
 
@@ -72,6 +75,6 @@ elif _MSCONFIG.DEBUG_LOGGING:
 
 else:
 
-    def debug(message):
+    def debug(message, *args):
         return None
 

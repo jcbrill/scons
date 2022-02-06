@@ -52,7 +52,7 @@ NOFILE = "SCONS_MAGIC_MISSING_FILE_STRING"
 def dictify(keys, values, result=None) -> dict:
     if result is None:
         result = {}
-    result.update(dict(zip(keys, values)))
+    result.update(zip(keys, values))
     return result
 
 _ALTSEP = os.altsep
@@ -70,17 +70,11 @@ else:
 # (Yeah, yeah, YAGNI...)
 def containsAny(s, pat) -> bool:
     """Check whether string `s` contains ANY of the items in `pat`."""
-    for c in pat:
-        if c in s:
-            return True
-    return False
+    return any(c in s for c in pat)
 
 def containsAll(s, pat) -> bool:
     """Check whether string `s` contains ALL of the items in `pat`."""
-    for c in pat:
-        if c not in s:
-            return False
-    return True
+    return all(c in s for c in pat)
 
 def containsOnly(s, pat) -> bool:
     """Check whether string `s` contains ONLY items in `pat`."""
@@ -99,7 +93,7 @@ def splitext(path) -> tuple:
     sep = rightmost_separator(path, os.sep)
     dot = path.rfind('.')
     # An ext is only real if it has at least one non-digit char
-    if dot > sep and not containsOnly(path[dot:], "0123456789."):
+    if dot > sep and not path[dot + 1:].isdigit():
         return path[:dot], path[dot:]
 
     return path, ""

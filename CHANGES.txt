@@ -16,6 +16,19 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
   From William Deegan:
     - Fix check for unsupported Python version. It was broken. Also now the error message
       will include what is the minimum supported version of Python
+    - Fix ActionTests to work with python 3.10.1 (and higher)
+    NOTE: If you build with Python 3.10.0 and then rebuild with 3.10.1 (or higher), you may
+          see unexpected rebuilds. This is due to Python internals changing which changed 
+          the signature of a Python Action Function.
+    - Fix a number of Python ResourceWarnings which are issued when running SCons and/or it's tests
+      with python 3.9 (or higher)
+    - Action._subproc() can now be used as a python context manager to ensure that the
+      POpen object is properly closed. 
+      (Thanks to Mats Wichmann for catching that DummyPopen needed additional logic)
+
+
+  From Daniel Moody:
+    - Add cache-debug messages for push failures.
 
   From Mats Wichmann:
     - Tweak the way default site_scons paths on Windows are expressed to
@@ -28,6 +41,13 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       we need to do this for internal reasons, those are skipped in that case.
       Bad association could mean some other tool took it over (Visual
       Studio Code is known to do this), or no association at all.
+    - Updated debug code in MSVC and MSVS tools to conform to the
+      suggested "lazy interpolation" use of the Python logging module.
+      Calls now look like 'debug("template %s", text)' rather than
+      'debug("template %s" % text)' so the logging system does the
+      interpolation only when/if needed (was a pylint warning).
+    - runtest.py now accepts -j 0 to auto-detect number of usable
+      processors for testing threads.
 
 
 RELEASE 4.3.0 - Tue, 16 Nov 2021 18:12:46 -0700
@@ -63,7 +83,7 @@ RELEASE 4.3.0 - Tue, 16 Nov 2021 18:12:46 -0700
     - Small fix to ensure CLVar default value is an empty list.
       See MongoDB bug report: https://jira.mongodb.org/browse/SERVER-59656
       Code contributed by MongoDB.
-    - Ninja - Fixed an issue where if you control-c and/or killed ninja while it was running scons to 
+    - Ninja - Fixed an issue where if you control-c and/or killed ninja while it was running scons to
       regenerate build.ninja you would end up with no build.ninja file and have to rerun scons from scratch.
       Code contributed by MongoDB.
 
@@ -75,12 +95,12 @@ RELEASE 4.3.0 - Tue, 16 Nov 2021 18:12:46 -0700
     - Fix ninja tool to never use for_sig substitution because ninja does not use signatures. This
       issue affected CommandGeneratorAction function actions specifically.
     - Expanded ninja Mkdir to also support Mkdir actions.
-    - Added support for the PCH environment variable to support subst generators. 
+    - Added support for the PCH environment variable to support subst generators.
     - Fix command line escaping for ninja dollar sign escape. Without escaping ninja properly,
       the ninja file scons regenerate and callback invocations will lose the $ characters used in
       the scons command line which ninja uses itself for escaping. For Example:
           scons BUILD=xyz OTHERVAR=$BUILD
-      Prior to this fix, it would cause ninja to fail to escape the dollar sign, leading to the 
+      Prior to this fix, it would cause ninja to fail to escape the dollar sign, leading to the
       single dollar sign being used as a ninja escape character in the ninja file.
 
   From Daniel Moody:
@@ -122,7 +142,7 @@ RELEASE 4.3.0 - Tue, 16 Nov 2021 18:12:46 -0700
     - Java updates: on Windows, detect more default JDK install locations.
       On all platforms, more Java versions (up to 17.0 now).  Add more information
       on version selection to docs.
-      Update docs on JavaH tool in light of javah command dropped since 10.0. 
+      Update docs on JavaH tool in light of javah command dropped since 10.0.
       Try to be better about preserving user's passed-in JAVA* construction vars.
     - Start the deprecation of the qt tool, which refers to Qt3 (usupported
       since around 2006). There's a deprecation warning added, initially
