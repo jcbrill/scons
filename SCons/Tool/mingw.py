@@ -40,17 +40,7 @@ import SCons.Builder
 import SCons.Defaults
 import SCons.Tool
 import SCons.Util
-
-mingw_base_paths = [
-    r'c:\MinGW\bin',
-    r'C:\cygwin64\bin',
-    r'C:\msys64',
-    r'C:\msys64\mingw64\bin',
-    r'C:\cygwin\bin',
-    r'C:\msys',
-    r'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
-]
-
+import SCons.Host
 
 def shlib_generator(target, source, env, for_signature):
     cmd = SCons.Util.CLVar(['$SHLINK', '$SHLINKFLAGS'])
@@ -121,29 +111,16 @@ SCons.Tool.SourceFileScanner.add_scanner('.rc', SCons.Defaults.CScan)
 # key_program = 'mingw32-gcc'
 key_program = 'mingw32-make'
 
-
-def find_version_specific_mingw_paths():
-    r"""
-    One example of default mingw install paths is:
-    C:\mingw-w64\x86_64-6.3.0-posix-seh-rt_v5-rev2\mingw64\bin
-
-    Use glob'ing to find such and add to mingw_base_paths
-    """
-    new_paths = glob.glob(r"C:\mingw-w64\*\mingw64\bin")
-
-    return new_paths
-
-
 _mingw_all_paths = None
 
 def get_mingw_paths():
     global _mingw_all_paths
     if _mingw_all_paths is None:
-        _mingw_all_paths = mingw_base_paths + find_version_specific_mingw_paths()
+        _mingw_all_paths = SCons.Host.get_mingw_bin_paths()
     return _mingw_all_paths
 
 def generate(env):
-    # Check for reasoanble mingw default paths
+    # Check for reasonable mingw default paths
     mingw_paths = get_mingw_paths()
 
     mingw = SCons.Tool.find_program_path(env, key_program, default_paths=mingw_paths)
@@ -151,8 +128,8 @@ def generate(env):
         mingw_bin_dir = os.path.dirname(mingw)
 
         # Adjust path if we found it in a chocolatey install
-        if mingw_bin_dir == r'C:\ProgramData\chocolatey\bin':
-            mingw_bin_dir = r'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
+        if mingw_bin_dir == r'c:\programdata\chocolatey\bin':
+            mingw_bin_dir = r'c:\programdata\chocolatey\lib\mingw\tools\install\mingw64\bin'
 
         env.AppendENVPath('PATH', mingw_bin_dir)
 

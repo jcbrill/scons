@@ -55,6 +55,7 @@ from collections import (
 import SCons.Util
 import SCons.Warnings
 from SCons.Tool import find_program_path
+import SCons.Host
 
 from . import common
 from .common import CONFIG_CACHE, debug
@@ -652,22 +653,14 @@ def msvc_version_to_maj_min(msvc_version):
     except ValueError as e:
         raise ValueError("Unrecognized version %s (%s)" % (msvc_version,msvc_version_numeric)) from None
 
-
-VSWHERE_PATHS = [os.path.join(p,'vswhere.exe') for p in  [
-    os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"),
-    os.path.expandvars(r"%ProgramFiles%\Microsoft Visual Studio\Installer"),
-    os.path.expandvars(r"%ChocolateyInstall%\bin"),
-]]
-
 def msvc_find_vswhere():
     """ Find the location of vswhere """
-    # For bug 3333: support default location of vswhere for both
-    # 64 and 32 bit windows installs.
-    # For bug 3542: also accommodate not being on C: drive.
     # NB: this gets called from testsuite on non-Windows platforms.
     # Whether that makes sense or not, don't break it for those.
     vswhere_path = None
-    for pf in VSWHERE_PATHS:
+    vswhere_pathlist = SCons.Host.get_vswhere_exe_paths()
+    debug("vswhere_pathlist=%s", repr(vswhere_pathlist))
+    for pf in vswhere_pathlist:
         if os.path.exists(pf):
             vswhere_path = pf
             break
