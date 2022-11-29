@@ -31,40 +31,73 @@ CHANGED/ENHANCED EXISTING FUNCTIONALITY
 - Added -fsanitize support to ParseFlags().  This will propagate to CCFLAGS and LINKFLAGS.
 - Calling EnsureSConsVersion() and EnsurePythonVersion() won't initialize
   DefaultEnvironment anymore.
+- The console message from the Chmod() action function now displays
+  octal modes using the modern Python syntax (0o755 rather than 0755).
 
 FIXES
 -----
 
-- List fixes of outright bugs
-
 - Added missing newline to generated compilation database (compile_commands.json)
+- A list argument as the source to the Copy() action function is now handled.
+  Both the implementation and the strfunction which prints the progress
+  message were adjusted.
+- The Java Scanner processing of JAVACLASSPATH for dependencies (behavior
+  that was introduced in SCons 4.4.0) is adjusted to split on the system's
+  search path separator instead of on a space. The previous behavior meant
+  that a path containing spaces (e.g. r"C:\somepath\My Classes") would
+  lead to unexpected errors. If the split-on-space behavior is desired,
+  pre-split the value: instead of: env["JAVACLASSPATH"] = "foo bar baz"
+  use: env["JAVACLASSPATH"] = env.Split("foo bar baz")
+  There is no change in how JAVACLASSPATH gets turned into the -classpath
+  argument passed to the JDK tools.
+- Ninja: Fix execution environment sanitation for launching ninja. Previously if you set an
+  execution environment variable set to a python list it would crash. Now it
+  will create a string joining the list with os.pathsep
 
 IMPROVEMENTS
 ------------
 
-- List improvements that wouldn't be visible to the user in the
-  documentation:  performance improvements (describe the circumstances
-  under which they would be observed), or major code cleanups
+- Changed the Taskmaster trace logic to use python's logging module.
 
 PACKAGING
 ---------
 
-- List changes in the way SCons is packaged and/or released
+- SCons now has three requirements files: requirements.txt describes
+  requirements to run scons; requirements-dev.txt requirements to
+  develop it - mainly things needed to run the testsuite;
+  requirements_pkg.txt are the requirements to do a full build
+  (including docs build) with an intent to create the packages.
+- Moved rpm and debian directories under packaging
+- Added logic to help packagers enable reproducible builds into packaging/etc/. Please
+  read packaging/etc/README.txt if you are interested.
+
 
 DOCUMENTATION
 -------------
 
-- List any significant changes to the documentation (not individual
-  typo fixes, even if they're mentioned in src/CHANGES.txt to give
-  the contributor credit)
+- Updated the --hash-format manpage entry.
+- EnsureSConsVersion, EnsurePythonVersion, Exit, GetLaunchDir and
+  SConscriptChdir are now listed as Global functions only.
+- Updated the docs for Glob.
+- Updated SHELL_ENV_GENERATORS description and added versionadded indicator.
+- JAVABOOTCLASSPATH, JAVACLASSPATH and JAVASOURCEPATH better document the
+  acceptable syntax for values, and how they will be interpreted,
+  including that JAVACLASSPATH will be scanned for dependencies.
+  Added note on the possibly surprising feature that SCons always passes
+  -sourcepath when calling javac, which affects how the class path is
+  used when finding sources.
+- Updated the User Guide chapter on installation: modernized the notes
+  on Python installs, SCons installs, and having multiple SCons versions
+  present on a single system.
 
 DEVELOPMENT
 -----------
 
-- List visible changes in the way SCons is developed
+- Refactored SCons/Taskmaster into a package. Moved SCons/Jobs.py into that package.
+  NOTE: If you hook into SCons.Jobs, you'll have to change that to use SCons.Taskmaster.Jobs
 
 Thanks to the following contributors listed below for their contributions to this release.
 ==========================================================================================
 .. code-block:: text
 
-    git shortlog --no-merges -ns 4.0.1..HEAD
+    git shortlog --no-merges -ns 4.4.0..HEAD
