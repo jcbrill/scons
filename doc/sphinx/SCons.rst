@@ -18,6 +18,7 @@ Subpackages
     SCons.Platform
     SCons.Scanner
     SCons.Script
+    SCons.Taskmaster
     SCons.Tool
     SCons.Variables
     SCons.compat
@@ -99,14 +100,6 @@ SCons.Executor module
     :undoc-members:
     :show-inheritance:
 
-SCons.Job module
-----------------
-
-.. automodule:: SCons.Job
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 SCons.Memoize module
 --------------------
 
@@ -143,14 +136,6 @@ SCons.Subst module
 ------------------
 
 .. automodule:: SCons.Subst
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-SCons.Taskmaster module
------------------------
-
-.. automodule:: SCons.Taskmaster
     :members:
     :undoc-members:
     :show-inheritance:
