@@ -22,6 +22,8 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       NOTE: If you hook into SCons.Jobs, you'll have to change that to use SCons.Taskmaster.Jobs
     - Changed the Taskmaster trace logic to use python's logging module. The output formatting
       should remain (mostly) the same. Minor update to unittest for this to adjust for 1 less newline.
+    - Migrated logging logic for --taskmastertrace to use Python's logging module. Added logging
+      to NewParallel Job class (Andrew Morrow's new parallel job implementation)
     - Ninja: Fix execution environment sanitation for launching ninja. Previously if you set an
       execution environment variable set to a python list it would crash. Now it
       will create a string joining the list with os.pathsep
@@ -30,17 +32,39 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
     - Moved rpm and debian directories under packaging
     - Added logic to help packagers enable reproducible builds into packaging/etc/. Please
       read packaging/etc/README.txt if you are interested.
+    - Added --experimental=tm_v2, which enables Andrew Morrow's new NewParallel Job implementation.
+      This should scale much better for highly parallel builds. You can also enable this via SetOption().
+    - Fixed command line argument --diskcheck: previously a value of 'none' was ignored.
+      SetOption('diskcheck','none') is unaffected, as it did not have the problem.
+    - Added overrides argument to SCons.Subst.scons_subst(), subst_list(), subst(), and Action's process(),
+      strfunction(). This allows passing a dictionary of envvars to override when evaluating subst()'d strings/lists
+    - Fixed Issue #4275 - when outputting compilation db and TEMPFILE was in use, the compilation db would have
+      command lines using the generated tempfile for long command lines, instead of the full command line for
+      the compilation step for the source/target pair.
 
-
+  From David H:
+    - Added JAVAPROCESSORPATH construction variable which populates -processorpath.
+    - Updated JavaScanner to scan JAVAPROCESSORPATH.
 
   From Dan Mezhiborsky:
     - Add newline to end of compilation db (compile_commands.json).
 
-  From Flaviu Tamas:
-    - Added -fsanitize support to ParseFlags().  This will propagate to CCFLAGS and LINKFLAGS.
+  From Daniel Moody:
+    - Added error message to handle the case when SCons attempts to retrieve all the targets
+      for a specified builder from the CacheDir, fails to do so, and then runs into an error
+      when deleting the files which were retrieved. Previously if this happened there was no
+      errors or warnings.
+
+  From Andrew Morrow
+    - Avoid returning UniqueList for `children` and other `Executor` APIs. This type
+      iterates more slowly than the builtin types. Also simplify uniquer_hashables to
+      use an faster implementation under the assumption of ordered dictionaries.
 
   From Ryan Saunders:
     - Fixed runtest.py failure on Windows caused by excessive escaping of the path to python.exe.
+
+  From Flaviu Tamas:
+    - Added -fsanitize support to ParseFlags().  This will propagate to CCFLAGS and LINKFLAGS.
 
   From Mats Wichmann:
     - A list argument as the source to the Copy() action function is now
@@ -73,12 +97,16 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       still run into problems on some configurations), and automated
       tests are now run on changes in this area so future problems can
       be spotted.
+    - The single-file Util module was split into a package with a few
+      functional areas getting their own files - Util.py had grown to
+      over 2100 lines.
+    - Add a zipapp package of scons-local: can use SCons from a local
+      file which does not need unpacking.
+    - Fix a problem (present in 4.4.0 only) where a Java inner class could
+      not be cached because the emitted filename contained a '$' and when
+      looked up through a node ended up generating a Python SyntaxError
+      because it was passed through scons_subst().
 
-
-  From Andrew Morrow
-    - Avoid returning UniqueList for `children` and other `Executor` APIs. This type
-      iterates more slowly than the builtin types. Also simplify uniquer_hashables to
-      use an faster implementation under the assumption of ordered dictionaries.
 
 RELEASE 4.4.0 -  Sat, 30 Jul 2022 14:08:29 -0700
 

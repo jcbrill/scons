@@ -24,41 +24,43 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 """
-Test the --experimental option.
+Test that CompilationDatabase works when TEMPFILE is being used to handle long
+commandlines for compilers/linkers/etc
 """
 
+import sys
+import os
+import os.path
 import TestSCons
 
 test = TestSCons.TestSCons()
 
-test.file_fixture('fixture/SConstruct__experimental', 'SConstruct')
+test.file_fixture('mygcc.py')
+test.file_fixture('test_main.c')
+test.file_fixture('fixture/SConstruct_tempfile', 'SConstruct')
 
-tests = [
-    ('.', []),
-    ('--experimental=ninja', ['ninja']),
-    ('--experimental=tm_v2', ['tm_v2']),
-    ('--experimental=all', ['ninja', 'tm_v2', 'transporter', 'warp_speed']),
-    ('--experimental=none', []),
+test.run()
+
+rel_files = [
+    'compile_commands_only_arg.json',
 ]
 
-for args, exper in tests:
-    read_string = """All Features=ninja,tm_v2,transporter,warp_speed
-Experimental=%s
-""" % (exper)
-    test.run(arguments=args,
-             stdout=test.wrap_stdout(read_str=read_string, build_str="scons: `.' is up to date.\n"))
+example_rel_file = """[
+    {
+        "command": "%s mygcc.py cc -o test_main.o -c test_main.c",
+        "directory": "%s",
+        "file": "test_main.c",
+        "output": "test_main.o"
+    }
+]
+""" % (sys.executable, test.workdir)
 
-test.run(arguments='--experimental=warp_drive',
-         stderr="""usage: scons [OPTIONS] [VARIABLES] [TARGETS]
+if sys.platform == 'win32':
+    example_rel_file = example_rel_file.replace('\\', '\\\\')
 
-SCons Error: option --experimental: invalid choice: 'warp_drive' (choose from 'all','none','ninja','tm_v2','transporter','warp_speed')
-""",
-         status=2)
+for f in rel_files:
+    # print("Checking:%s" % f)
+    test.must_exist(f)
+    test.must_match(f, example_rel_file, mode='r')
 
 test.pass_test()
-
-# Local Variables:
-# tab-width:4
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=4 shiftwidth=4:

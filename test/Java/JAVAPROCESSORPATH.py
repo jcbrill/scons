@@ -24,36 +24,67 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 """
-Test the --experimental option.
+Verify that use of $JAVAPROCESSORPATH sets the -processorpath option
+on javac compilations.
 """
+
+import os
 
 import TestSCons
 
 test = TestSCons.TestSCons()
 
-test.file_fixture('fixture/SConstruct__experimental', 'SConstruct')
+where_javac, java_version = test.java_where_javac()
 
-tests = [
-    ('.', []),
-    ('--experimental=ninja', ['ninja']),
-    ('--experimental=tm_v2', ['tm_v2']),
-    ('--experimental=all', ['ninja', 'tm_v2', 'transporter', 'warp_speed']),
-    ('--experimental=none', []),
-]
+test.write('SConstruct', """
+DefaultEnvironment(tools=[])
+env = Environment(tools=['javac'], JAVAPROCESSORPATH=['dir1', 'dir2'])
+j1 = env.Java(target='class', source='com/Example1.java')
+j2 = env.Java(target='class', source='com/Example2.java')
+""")
 
-for args, exper in tests:
-    read_string = """All Features=ninja,tm_v2,transporter,warp_speed
-Experimental=%s
-""" % (exper)
-    test.run(arguments=args,
-             stdout=test.wrap_stdout(read_str=read_string, build_str="scons: `.' is up to date.\n"))
+test.subdir('com')
 
-test.run(arguments='--experimental=warp_drive',
-         stderr="""usage: scons [OPTIONS] [VARIABLES] [TARGETS]
+test.write(['com', 'Example1.java'], """\
+package com;
 
-SCons Error: option --experimental: invalid choice: 'warp_drive' (choose from 'all','none','ninja','tm_v2','transporter','warp_speed')
-""",
-         status=2)
+public class Example1
+{
+
+     public static void main(String[] args)
+     {
+
+     }
+
+}
+""")
+
+test.write(['com', 'Example2.java'], """\
+package com;
+
+public class Example2
+{
+
+     public static void main(String[] args)
+     {
+
+     }
+
+}
+""")
+
+# Setting -processorpath messes with the Java runtime environment, so
+# we'll just take the easy way out and examine the -n output to see if
+# the expected option shows up on the command line.
+
+processorpath = os.pathsep.join(['dir1', 'dir2'])
+
+expect = """\
+javac -processorpath %(processorpath)s -d class -sourcepath com com.Example1\\.java
+javac -processorpath %(processorpath)s -d class -sourcepath com com.Example2\\.java
+""" % locals()
+
+test.run(arguments = '-Q -n .', stdout = expect, match=TestSCons.match_re)
 
 test.pass_test()
 
