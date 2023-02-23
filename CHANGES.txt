@@ -46,6 +46,11 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
     - Added JAVAPROCESSORPATH construction variable which populates -processorpath.
     - Updated JavaScanner to scan JAVAPROCESSORPATH.
 
+  From Nickolai Korshunov
+    - Added FILE_ENCODING, to allow explicitly setting the text encoding for files
+      written by the Textfile() and Substfile() builders. If not specified, Textfile() and Substfile() builders
+      will write files as UTF-8. Fixed Issue #4302.
+
   From Dan Mezhiborsky:
     - Add newline to end of compilation db (compile_commands.json).
 
@@ -54,6 +59,11 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       for a specified builder from the CacheDir, fails to do so, and then runs into an error
       when deleting the files which were retrieved. Previously if this happened there was no
       errors or warnings.
+    - Fix issue #2757, where Configure checks that perform a check which reads a modified source
+      (including program, source or header file(s)) would incorrectly mark that file "up to date" so the
+      actual build would not see the file as modified. Leading to incorrect incremental builds.
+      Now configure checks now clear node info for non conftest nodes, so they will be re-evaluated for
+      the real taskmaster run when the build commences.
 
   From Andrew Morrow
     - Avoid returning UniqueList for `children` and other `Executor` APIs. This type
@@ -62,6 +72,9 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
 
   From Ryan Saunders:
     - Fixed runtest.py failure on Windows caused by excessive escaping of the path to python.exe.
+
+  From Lukas Schrangl:
+    - Run LaTeX after biber/bibtex only if necessary
 
   From Flaviu Tamas:
     - Added -fsanitize support to ParseFlags().  This will propagate to CCFLAGS and LINKFLAGS.
@@ -102,10 +115,36 @@ RELEASE  VERSION/DATE TO BE FILLED IN LATER
       over 2100 lines.
     - Add a zipapp package of scons-local: can use SCons from a local
       file which does not need unpacking.
+    - Additional explanations for MSVSProject and MSVSSolution builders.
     - Fix a problem (present in 4.4.0 only) where a Java inner class could
       not be cached because the emitted filename contained a '$' and when
       looked up through a node ended up generating a Python SyntaxError
       because it was passed through scons_subst().
+    - Have the gfortran tool do a better job of honoring user preferences
+      for the dialect tools (F77, F90, F03 and F09, as well as the shared-library
+      equivalents SHF77,  SHF90, SHF03, SHF09). Previously these were
+      unconditionally overwritten to 'gfortran'; the change should be more
+      in line with expectations of how these variables should work.
+      Also cleaned a few Fortran tests - test behavior does not change.
+    - Updated MSVC documentation - adds "version added" annotations on recently
+      added construction variables and provides a version-mapping table.
+    - Add Python 3.12 support, and indicate 3.11/3.12 support in package.
+      3.12 is in alpha for this SCons release, the bytecode sequences 
+      embedded in SCons/ActionTests.py may need to change later, but
+      based on what is known now, 3.12 itself should work with this release.
+    - Add "append" keyword argument to Configure context's CheckLib and
+      CheckLibWithHeader to control whether to append or prepend (issue #2767)
+      Also added "unique" keyword, to control whether a library is added
+      or not if it is already in the $LIBS construction var in the
+      configure context. (issue #2768).
+    - Completely refactored the CPPDEFINES logic in Append/AppendUnique/Prepend/PrependUnique
+      This change fixes the following GH Issues:
+      - GH Issue #3876 - Append() and AppendUnique() will handle CPPDEFINES the same
+      - GH Issue #4254 - Make handling tuples in CPPDEFINES consistent.
+      - We no longer sort the keys added to CPPDEFINES by their dictionary keys.
+        We take advantage that their order is now stable based on insertion order
+        in Python 3.5+
+      - Added/modifed unit and system tests to verify these changes.
 
 
 RELEASE 4.4.0 -  Sat, 30 Jul 2022 14:08:29 -0700
@@ -268,16 +307,16 @@ RELEASE 4.4.0 -  Sat, 30 Jul 2022 14:08:29 -0700
     - Ninja:Added user configurable setting of ninja depfile format via NINJA_DEPFILE_PARSE_FORMAT.
       Now setting NINJA_DEPFILE_PARSE_FORMAT to [msvc,gcc,clang] can force the ninja expected
       format. Compiler tools will also configure the variable automatically.
-    - Ninja: Made ninja tool force the ninja file as the only target. 
+    - Ninja: Made ninja tool force the ninja file as the only target.
     - Ninja: Improved the default targets setup and made sure there is always a default target for
       the ninja file, which excludes targets that start and stop the daemon.
     - Ninja: Update ninja tool so targets passed to SCons are propagated to ninja when scons
       automatically executes ninja.
-    - Small refactor of scons daemons using a shared StateInfo class for communication 
+    - Small refactor of scons daemons using a shared StateInfo class for communication
       between the scons interactive thread and the http server thread. Added error handling
       for scons interactive failing to startup.
     - Ninja: Updated ninja scons daemon scripts to output errors to stderr as well as the daemon log.
-    - Ninja: Fix typo in ninja scons daemon startup which causes ConnectionRefusedError to not retry 
+    - Ninja: Fix typo in ninja scons daemon startup which causes ConnectionRefusedError to not retry
     - Added SHELL_ENV_GENERATORS construction variable. This variable should be set to a list
       (or an iterable) which contains functions to be called in order
       when constructing the execution environment (Generally this is the shell environment
@@ -519,7 +558,7 @@ RELEASE 4.2.0 - Sat, 31 Jul 2021 18:12:46 -0700
     - Fix Issue #3906 - `IMPLICIT_COMMAND_DEPENDENCIES` was not properly disabled when
       set to any string value (For example ['none','false','no','off'])
       Also previously 'All' wouldn't have the desired affect.
-      
+
   From Ivan Kravets:
     - Provide a custom argument escape function for `TempFileMunge` using a new
       `TEMPFILEARGESCFUNC` variable. Useful if you need to apply extra operations on
@@ -1052,7 +1091,6 @@ RELEASE 3.1.1 - Mon, 07 Aug 2019 20:09:12 -0500
         - CacheDir not write-able
         - JSON encoding errors for CacheDir config
         - JSON decoding errors for CacheDir config
-
 
 RELEASE 3.1.0 - Mon, 20 Jul 2019 16:59:23 -0700
 
