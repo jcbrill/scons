@@ -24,20 +24,41 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 """
-Verify that $_CPPDEFFLAGS doesn't barf when CPPDEFINES isn't defined.
+Template for end-to-end test file.
+Replace this with a description of the test.
 """
+
+import textwrap
+import os 
 
 import TestSCons
 
 test = TestSCons.TestSCons()
 
-test.write('SConstruct', """\
-env = Environment()
-print(env.subst('$_CPPDEFFLAGS'))
+test.dir_fixture("conftest_source_file")
+
+test.run(arguments='.')
+
+conf_text = textwrap.dedent("""\
+    Checking for C header file header1.h... {arg1}yes
+    Checking for C header file header3.h... {arg2}yes
 """)
 
-expect = test.wrap_stdout(build_str="scons: `.' is up to date.\n", read_str="\n")
-test.run(arguments='.', stdout=expect)
+test.up_to_date(read_str=conf_text.format(arg1='(cached) ', arg2='(cached) '))
+
+test.write('header2.h', """
+#pragma once
+int test_header = 2;
+""")
+
+test.not_up_to_date(read_str=conf_text.format(arg1='(cached) ', arg2='(cached) '))
+
+test.up_to_date(read_str=conf_text.format(arg1='', arg2='(cached) '))
+os.environ['SCONSFLAGS'] = '--config=force'
+test.up_to_date(read_str=conf_text.format(arg1='', arg2=''))
+os.environ['SCONSFLAGS'] = ''
+
+test.up_to_date(read_str=conf_text.format(arg1='(cached) ', arg2='(cached) '))
 
 test.pass_test()
 

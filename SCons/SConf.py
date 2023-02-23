@@ -227,6 +227,8 @@ class SConfBuildTask(SCons.Taskmaster.AlwaysTask):
     This is almost the same as SCons.Script.BuildTask. Handles SConfErrors
     correctly and knows about the current cache_mode.
     """
+    non_sconf_nodes = set()
+
     def display(self, message):
         if sconf_global.logstream:
             sconf_global.logstream.write("scons: Configure: " + message + "\n")
@@ -375,6 +377,25 @@ class SConfBuildTask(SCons.Taskmaster.AlwaysTask):
                     sconsign = t.dir.sconsign()
                     sconsign.set_entry(t.name, sconsign_entry)
                     sconsign.merge()
+
+    def make_ready_current(self):
+        # We're overriding make_ready_current() call to add to the list
+        # of nodes used by this task, filtering out any nodes created
+        # by the checker for it's own purpose.
+        self.non_sconf_nodes.update([t for t in self.targets if not t.is_conftest()])
+        super().make_ready_current()
+    make_ready = make_ready_current
+
+    def postprocess(self):
+        # We're done executing this task, so now we'll go through all the
+        # nodes used by this task which aren't nodes created for
+        # Configure checkers, but rather are existing or built files
+        # and reset their node info.
+        # If we do not reset their node info, any changes in these
+        # nodes will not trigger builds in the normal build process
+        for node in self.non_sconf_nodes:
+            node.ninfo = node.new_ninfo()
+        super().postprocess()
 
 class SConfBase:
     """This is simply a class to represent a configure context. After
@@ -923,14 +944,20 @@ class CheckContext:
         st, out = self.TryRun(text, ext)
         return not st, out
 
-    def AppendLIBS(self, lib_name_list):
+    def AppendLIBS(self, lib_name_list, unique=False):
         oldLIBS = self.env.get( 'LIBS', [] )
-        self.env.Append(LIBS = lib_name_list)
+        if unique:
+            self.env.AppendUnique(LIBS = lib_name_list)
+        else:
+            self.env.Append(LIBS = lib_name_list)
         return oldLIBS
 
-    def PrependLIBS(self, lib_name_list):
+    def PrependLIBS(self, lib_name_list, unique=False):
         oldLIBS = self.env.get( 'LIBS', [] )
-        self.env.Prepend(LIBS = lib_name_list)
+        if unique:
+            self.env.PrependUnique(LIBS = lib_name_list)
+        else:
+            self.env.Prepend(LIBS = lib_name_list)
         return oldLIBS
 
     def SetLIBS(self, val):
@@ -1067,7 +1094,8 @@ def CheckCXXHeader(context, header, include_quotes = '""'):
 
 
 def CheckLib(context, library = None, symbol = "main",
-             header = None, language = None, autoadd = 1):
+             header = None, language = None, autoadd=True,
+             append=True, unique=False) -> bool:
     """
     A test for a library. See also CheckLibWithHeader.
     Note that library may also be None to test whether the given symbol
@@ -1082,15 +1110,16 @@ def CheckLib(context, library = None, symbol = "main",
 
     # ToDo: accept path for the library
     res = SCons.Conftest.CheckLib(context, library, symbol, header = header,
-                                        language = language, autoadd = autoadd)
-    context.did_show_result = 1
+                                        language = language, autoadd = autoadd,
+                                        append=append, unique=unique)
+    context.did_show_result = True
     return not res
 
 # XXX
 # Bram: Can only include one header and can't use #ifdef HAVE_HEADER_H.
 
 def CheckLibWithHeader(context, libs, header, language,
-                       call = None, autoadd = 1):
+                       call = None, autoadd=True, append=True, unique=False) -> bool:
     # ToDo: accept path for library. Support system header files.
     """
     Another (more sophisticated) test for a library.
@@ -1099,8 +1128,7 @@ def CheckLibWithHeader(context, libs, header, language,
     As in CheckLib, we support library=None, to test if the call compiles
     without extra link flags.
     """
-    prog_prefix, dummy = \
-                 createIncludesFromHeaders(header, 0)
+    prog_prefix, dummy = createIncludesFromHeaders(header, 0)
     if not libs:
         libs = [None]
 
@@ -1108,7 +1136,8 @@ def CheckLibWithHeader(context, libs, header, language,
         libs = [libs]
 
     res = SCons.Conftest.CheckLib(context, libs, None, prog_prefix,
-            call = call, language = language, autoadd = autoadd)
+            call = call, language = language, autoadd=autoadd,
+            append=append, unique=unique)
     context.did_show_result = 1
     return not res
 
