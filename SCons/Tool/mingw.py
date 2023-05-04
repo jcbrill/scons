@@ -119,7 +119,7 @@ def get_mingw_paths():
         _mingw_all_paths = SCons.Host.get_mingw_bin_paths()
     return _mingw_all_paths
 
-def generate(env):
+def generate(env) -> None:
     # Check for reasonable mingw default paths
     mingw_paths = get_mingw_paths()
 
