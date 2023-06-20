@@ -41,12 +41,19 @@ _MINGW_DEFAULT_PATHS = [
     r'C:\msys64\mingw64\bin',
     r'C:\cygwin\bin',
     r'C:\msys',
+    # Chocolatey mingw (pkg name for MinGW-w64) does not use ChocolateyToolsLocation
     r'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin',
     # One example of default mingw install paths is:
     # C:\mingw-w64\x86_64-6.3.0-posix-seh-rt_v5-rev2\mingw64\bin
     # Use glob'ing to find such and add to mingw_base_paths
     r'C:\mingw-w64\*\mingw64\bin',
 ]
+
+# Chocolatey msys2 uses envvar ChocolateyToolsLocation to base the install
+# location (unless the user supplied additional params). Try to reproduce:
+_choco = os.environ.get('ChocolateyToolsLocation')
+if _choco:
+    _MINGW_DEFAULT_PATHS.append(_choco + r'\msys64\bin')
 
 path_group_push(_MINGW_GROUP_LIST, _MINGW_DEFAULT_PATHS)
 
