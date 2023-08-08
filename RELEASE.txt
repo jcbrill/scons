@@ -59,6 +59,7 @@ CHANGED/ENHANCED EXISTING FUNCTIONALITY
   batch file exists but an individual msvc toolset may not support the host/target
   architecture combination.  For example, when using VS2022 on arm64, the arm64 native
   tools are only installed for the 14.3x toolsets.
+- Extend range of recognized Java versions to 20.
 
 FIXES
 -----
@@ -96,7 +97,10 @@ IMPROVEMENTS
 PACKAGING
 ---------
 
-- List changes in the way SCons is packaged and/or released
+- The build of scons now matches the help text displayed - the targets
+  listed there can all now be given as a target to build (except for
+  the two full source balls; the source tar.gz is currently generated directly
+  by the GitHub release process).
 
 DOCUMENTATION
 -------------
@@ -106,6 +110,7 @@ DOCUMENTATION
   the results would be incorrect (does not apply to positional argument
   usage, which had no problem).
 - Changed the message about scons -H to clarify it shows built-in options only.
+- Cachedir description updated.
 
 DEVELOPMENT
 -----------
