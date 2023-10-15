@@ -30,8 +30,8 @@ selection method.
 
 import os.path
 import re
-import subprocess
 import sys
+from subprocess import PIPE
 
 import SCons.Action
 import SCons.Defaults
@@ -68,7 +68,7 @@ def _find_modules(src):
         with open(src) as f:
             data = f.read()
         matches = _reModule.findall(data)
-    except IOError:
+    except OSError:
         # If the file's not yet generated, guess the module name from the file stem
         matches = []
         mnames.append(os.path.splitext(os.path.basename(src))[0])
@@ -136,17 +136,13 @@ def _get_swig_version(env, swig):
     swig = env.subst(swig)
     if not swig:
         return version
-    pipe = SCons.Action._subproc(env, SCons.Util.CLVar(swig) + ['-version'],
-                                 stdin = 'devnull',
-                                 stderr = 'devnull',
-                                 stdout = subprocess.PIPE)
-    if pipe.wait() != 0:
+
+    cp = SCons.Action.scons_subproc_run(
+        env, SCons.Util.CLVar(swig) + ['-version'], stdout=PIPE
+    )
+    if cp.returncode:
         return version
-
-    # MAYBE:   out = SCons.Util.to_str (pipe.stdout.read())
-    with pipe.stdout:
-        out = SCons.Util.to_str(pipe.stdout.read())
-
+    out = SCons.Util.to_str(cp.stdout)
     match = re.search(r'SWIG Version\s+(\S+).*', out, re.MULTILINE)
     if match:
         version = match.group(1)

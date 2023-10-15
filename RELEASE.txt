@@ -60,6 +60,24 @@ CHANGED/ENHANCED EXISTING FUNCTIONALITY
   architecture combination.  For example, when using VS2022 on arm64, the arm64 native
   tools are only installed for the 14.3x toolsets.
 - Extend range of recognized Java versions to 20.
+- Builder calls (like Program()) now accept pathlib objects in source lists.
+- The Help() function now takes an additional keyword argument keep_local:
+  when starting to build a help message, you can now retain help from AddOption
+  calls (options added for the project_, but omit help for SCons' own cmdline
+  options with "Help(newtext, append=True, local_only=True)".
+- Calling SConscript() with a nonexistent file is now an error.
+  Previously this succeeded - prior to SCons 3.0, silently; since 3.0, with
+  a warning. Developers can still instruct such an SConscript() call not
+  to fail by being explicit: pass keyword argument "must_exist=False".
+  The "--warn=missing-sconscript" commandline option is no longer available
+  as the warning was part of the transitional phase.
+- Add missing directories to searched paths for mingw installs
+- SCons.Util.types renamed to to SCons.Util.sctypes to avoid any possible
+  confusion with the Python stdlib "types" module. Note that it was briefly
+  (for 4.5.x only) possible to import directly from SCons.Util.types,
+  although the preferred usage remains to import from SCons.Util only.
+  Any code that did the direct import will have to change to import from
+  SCons.Util.sctypes.
 
 FIXES
 -----
@@ -88,11 +106,25 @@ FIXES
   with the python logging module was refactored to prevent test failure.
 - MSVS: Add arm64 to the MSVS supported architectures list for VS2017 and later to be
   consistent with the current documentation of MSVS_ARCH.
+- FORTRAN: Fix gfortran tool initialization. Defaults to using binary named gfortran
+  as would be expected, and properly set's SHFORTRAN flags to include -fPIC
+  where previously it was only doing so for the other fortran versions (F77,..)
+- MSCommon: Added more error handling while reading msvc config cache.
+  (Enabled/specified by SCONS_CACHE_MSVC_CONFIG).
+  The existing cache will be discarded if there's a decode error reading it.
+  It's possible there's a race condition creating this issue it in certain CI builds.
+- Fixed: race condition in `Mkdir` which can happen when two `SConscript`
+  are processed simultaneously by two separate build commands.
 
 IMPROVEMENTS
 ------------
 
 - Now tries to find mingw if it comes from Chocolatey install of msys2.
+- MSVC: Module imports were changed from a relative import to a top-level
+  absolute import in the following Microsoft tools: midl, mslib, mslink, mssdk, msvc,
+  msvs. Moving any of these tools that used relative imports to the scons site tools
+  folder would fail on import (i.e., the relative import paths become invalid when
+  moved).
 
 PACKAGING
 ---------
@@ -111,6 +143,9 @@ DOCUMENTATION
   usage, which had no problem).
 - Changed the message about scons -H to clarify it shows built-in options only.
 - Cachedir description updated.
+- Updated the first two chapters on building with SCons in the User Guide.
+- Clarify that exported variables are shared - if mutable, changes made in
+  an SConscript are visible everywhere that takes a refereence to that object.
 
 DEVELOPMENT
 -----------
@@ -125,6 +160,8 @@ DEVELOPMENT
   doesn't use so it can be instantiated by unittests and others.
 - Added more type annotations to internal routines.
 - Cleaned up dblite module (checker warnings, etc.).
+- TeX tests: skip tests that use makeindex or epstopdf not installed, or
+  if `kpsewhich glossaries.sty` fails.
 
 Thanks to the following contributors listed below for their contributions to this release.
 ==========================================================================================
