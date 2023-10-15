@@ -29,9 +29,9 @@ import copy
 import json
 import os
 import re
-import subprocess
 import sys
 from contextlib import suppress
+from subprocess import DEVNULL, PIPE
 from pathlib import Path
 
 import SCons.Util
@@ -108,7 +108,7 @@ else:
 
 
 # SCONS_CACHE_MSVC_CONFIG is public, and is documented.
-CONFIG_CACHE = os.environ.get('SCONS_CACHE_MSVC_CONFIG')
+CONFIG_CACHE = os.environ.get('SCONS_CACHE_MSVC_CONFIG', '')
 if CONFIG_CACHE in ('1', 'true', 'True'):
     CONFIG_CACHE = os.path.join(os.path.expanduser('~'), 'scons_msvc_cache.json')
 
@@ -118,50 +118,63 @@ if CONFIG_CACHE:
     if os.environ.get('SCONS_CACHE_MSVC_FORCE_DEFAULTS') in ('1', 'true', 'True'):
         CONFIG_CACHE_FORCE_DEFAULT_ARGUMENTS = True
 
-def read_script_env_cache():
+def read_script_env_cache() -> dict:
     """ fetch cached msvc env vars if requested, else return empty dict """
     envcache = {}
-    if CONFIG_CACHE:
+    p = Path(CONFIG_CACHE)
+    if not CONFIG_CACHE or not p.is_file():
+        return envcache
+    with SCons.Util.FileLock(CONFIG_CACHE, timeout=5, writer=True), p.open('r') as f:
+        # Convert the list of cache entry dictionaries read from
+        # json to the cache dictionary. Reconstruct the cache key
+        # tuple from the key list written to json.
+        # Note we need to take a write lock on the cachefile, as if there's
+        # an error and we try to remove it, that's "writing" on Windows.
         try:
-            p = Path(CONFIG_CACHE)
-            with p.open('r') as f:
-                # Convert the list of cache entry dictionaries read from
-                # json to the cache dictionary. Reconstruct the cache key
-                # tuple from the key list written to json.
-                envcache_list = json.load(f)
-                if isinstance(envcache_list, list):
-                    envcache = {tuple(d['key']): d['data'] for d in envcache_list}
-                else:
-                    # don't fail if incompatible format, just proceed without it
-                    warn_msg = "Incompatible format for msvc cache file {}: file may be overwritten.".format(
-                        repr(CONFIG_CACHE)
-                    )
-                    SCons.Warnings.warn(MSVCCacheInvalidWarning, warn_msg)
-                    debug(warn_msg)
-        except FileNotFoundError:
-            # don't fail if no cache file, just proceed without it
-            pass
+            envcache_list = json.load(f)
+        except json.JSONDecodeError:
+            # If we couldn't decode it, it could be corrupt. Toss.
+            with suppress(FileNotFoundError):
+                p.unlink()
+            warn_msg = "Could not decode msvc cache file %s: dropping."
+            SCons.Warnings.warn(MSVCCacheInvalidWarning, warn_msg % CONFIG_CACHE)
+            debug(warn_msg, CONFIG_CACHE)
+        else:
+            if isinstance(envcache_list, list):
+                envcache = {tuple(d['key']): d['data'] for d in envcache_list}
+            else:
+                # don't fail if incompatible format, just proceed without it
+                warn_msg = "Incompatible format for msvc cache file %s: file may be overwritten."
+                SCons.Warnings.warn(MSVCCacheInvalidWarning, warn_msg % CONFIG_CACHE)
+                debug(warn_msg, CONFIG_CACHE)
+
     return envcache
 
 
 def write_script_env_cache(cache) -> None:
     """ write out cache of msvc env vars if requested """
-    if CONFIG_CACHE:
-        try:
-            p = Path(CONFIG_CACHE)
-            with p.open('w') as f:
-                # Convert the cache dictionary to a list of cache entry
-                # dictionaries. The cache key is converted from a tuple to
-                # a list for compatibility with json.
-                envcache_list = [{'key': list(key), 'data': data} for key, data in cache.items()]
-                json.dump(envcache_list, f, indent=2)
-        except TypeError:
-            # data can't serialize to json, don't leave partial file
-            with suppress(FileNotFoundError):
-                p.unlink()
-        except IOError:
-            # can't write the file, just skip
-            pass
+    if not CONFIG_CACHE:
+        return
+
+    p = Path(CONFIG_CACHE)
+    try:
+        with SCons.Util.FileLock(CONFIG_CACHE, timeout=5, writer=True), p.open('w') as f:
+            # Convert the cache dictionary to a list of cache entry
+            # dictionaries. The cache key is converted from a tuple to
+            # a list for compatibility with json.
+            envcache_list = [
+                {'key': list(key), 'data': data} for key, data in cache.items()
+            ]
+            json.dump(envcache_list, f, indent=2)
+    except TypeError:
+        # data can't serialize to json, don't leave partial file
+        with suppress(FileNotFoundError):
+            p.unlink()
+    except OSError:
+        # can't write the file, just skip
+        pass
+
+    return
 
 
 _is_win64 = None
@@ -322,44 +335,26 @@ def get_output(vcbat, args=None, env=None, skip_sendtelemetry=False):
         debug("Calling '%s'", vcbat)
         cmd_str = '"%s" & set' % vcbat
 
-    popen = SCons.Action._subproc(
-        env,
-        cmd_str,
-        stdin='devnull',
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+    cp = SCons.Action.scons_subproc_run(
+        env, cmd_str, stdin=DEVNULL, stdout=PIPE, stderr=PIPE,
     )
 
-    # Use the .stdout and .stderr attributes directly because the
-    # .communicate() method uses the threading module on Windows
-    # and won't work under Pythons not built with threading.
-    with popen.stdout:
-        stdout = popen.stdout.read()
-    with popen.stderr:
-        stderr = popen.stderr.read()
-
     # Extra debug logic, uncomment if necessary
-    # debug('stdout:%s', stdout)
-    # debug('stderr:%s', stderr)
+    # debug('stdout:%s', cp.stdout)
+    # debug('stderr:%s', cp.stderr)
 
     # Ongoing problems getting non-corrupted text led to this
     # changing to "oem" from "mbcs" - the scripts run presumably
     # attached to a console, so some particular rules apply.
-    # Unfortunately, "oem" not defined in Python 3.5, so get another way
-    if sys.version_info.major == 3 and sys.version_info.minor < 6:
-        from ctypes import windll
-
-        OEM = "cp{}".format(windll.kernel32.GetConsoleOutputCP())
-    else:
-        OEM = "oem"
-    if stderr:
+    OEM = "oem"
+    if cp.stderr:
         # TODO: find something better to do with stderr;
         # this at least prevents errors from getting swallowed.
-        sys.stderr.write(stderr.decode(OEM))
-    if popen.wait() != 0:
-        raise IOError(stderr.decode(OEM))
+        sys.stderr.write(cp.stderr.decode(OEM))
+    if cp.returncode != 0:
+        raise OSError(cp.stderr.decode(OEM))
 
-    return stdout.decode(OEM)
+    return cp.stdout.decode(OEM)
 
 
 KEEPLIST = (
@@ -386,7 +381,7 @@ def parse_output(output, keep=KEEPLIST):
     # rdk will  keep the regex to match the .bat file output line starts
     rdk = {}
     for i in keep:
-        rdk[i] = re.compile('%s=(.*)' % i, re.I)
+        rdk[i] = re.compile(r'%s=(.*)' % i, re.I)
 
     def add_env(rmatch, key, dkeep=dkeep) -> None:
         path_list = rmatch.group(1).split(os.pathsep)
