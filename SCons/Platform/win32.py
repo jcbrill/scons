@@ -204,10 +204,27 @@ def exec_spawn(l, env):
             sys.stderr.write("scons: unknown OSError exception code %d - '%s': %s\n" % (e.errno, command, e.strerror))
     return result
 
-# special handling for cl/link output
+# configuration for msvc special handling
+
+#  rewrite  filter  action
+#  -------  ------  ----------------------------------
+#  True     False   rewrite streams
+#  True     True    filter records and rewrite streams
+#  False    False   skip processing
+#  False    True    skip processing
+
+msvc_rewrite_enabled = True
+msvc_filter_enabled = False
+
+msvc_suppress_cl = False
+msvc_suppress_link = False
+
+# special handling for msvc cl/link output
 
 re_msvc_program = re.compile(r'^(?P<basename>cl|link)(\.exe)?$', re.IGNORECASE)
-re_msvc_redirect = re.compile(r'[12]?[>]')
+
+re_msvc_redirect_stdout = re.compile(r'^[1]?>(?P<stderr>&\s*2)*')
+re_msvc_redirect_stderr = re.compile(r'^[2]?>(?P<stdout>&\s*1)*')
 
 def _msvc_program(args, env):
 
@@ -220,7 +237,9 @@ def _msvc_program(args, env):
         return None
 
     for arg in args:
-        if re_msvc_redirect.search(arg):
+        if re_msvc_redirect_stdout.match(arg):
+            return None
+        if re_msvc_redirect_stderr.match(arg):
             return None
 
     program = m_program.group('basename').lower()
@@ -260,6 +279,8 @@ def _msvc_suppress_cl_filename(line, argstr):
     if not tail:
         return None
 
+    # TODO: regex instead of blind search?
+
     if tail not in argstr:
         return None
 
@@ -273,29 +294,51 @@ def _msvc_suppress_cl_message(program, line, argstr):
 
     return None
 
-re_msvc_link_creating = re.compile('^\s*Creating\s+library\s+.+$', re.IGNORECASE)
+re_msvc_link_outspec = re.compile(r'\s/OUT:(?P<pathspec>"[^"]+"|\S+)(?:\s|$)', re.IGNORECASE)
 
-def _msvc_suppress_link_creating(line, argstr):
+def _msvc_suppress_link_libexp(line, argstr):
 
-    if not re_msvc_link_creating.match(line):
+    m_outspec = re_msvc_link_outspec.search(argstr)
+    if not m_outspec:
+        return None
+
+    pathspec = m_outspec.group('pathspec')
+
+    pathbasename, fileext = os.path.splitext(pathspec)
+    if not fileext:
+        return None
+
+    pathprefix, basename = os.path.split(pathbasename)
+    if not basename:
+        return None
+
+    if not re_filename_restrict.match(basename):
+        return None
+
+    if not re_filename_legal.match(basename):
+        return None
+
+    re_pathbasename = re.escape(pathbasename)
+
+    regex_str = fr'\s"?(?P<lib>{re_pathbasename}\.lib)"?.*"?(?P<exp>{re_pathbasename}\.exp)"?'
+    re_libexp = re.compile(regex_str, re.IGNORECASE)
+
+    if not re_libexp.search(line):
         return None
 
     return line
 
 def _msvc_suppress_link_message(program, line, argstr):
 
-    message = _msvc_suppress_link_creating(line, argstr)
+    message = _msvc_suppress_link_libexp(line, argstr)
     if message:
         return message
 
     return None
 
-msvc_suppress_cl = False
-msvc_suppress_link = False
-
 msvc_suppress_program_map = {
-    'cl': _msvc_suppress_cl_message if msvc_suppress_cl else None,
-    'link': _msvc_suppress_link_message if msvc_suppress_link else None,
+    'cl': _msvc_suppress_cl_message if (msvc_filter_enabled and msvc_suppress_cl) else None,
+    'link': _msvc_suppress_link_message if (msvc_filter_enabled and msvc_suppress_link) else None,
 }
 
 re_msvc_errwarn = re.compile(r'^.+\s+(warning|error)\s+[A-Z]+[0-9]+\s*\:.+$', re.IGNORECASE)
@@ -316,7 +359,7 @@ def _msvc_spawn(sh, escape, cmd, args, env, program):
     os.close(tmp_stdout)
 
     # redirect stdout and stderr: 1>tmpfile 2>&1
-    args.append(f"1>{tmp_stdout_name}")
+    args.append(f'1>"{tmp_stdout_name}"')
     args.append("2>&1")
 
     argstr = ' '.join(args)
@@ -373,9 +416,10 @@ def spawn(sh, escape, cmd, args, env):
         sys.stderr.write("scons: Could not find command interpreter, is it in your PATH?\n")
         return 127
 
-    program = _msvc_program(args, env)
-    if program:
-        return _msvc_spawn(sh, escape, cmd, args, env, program)
+    if msvc_rewrite_enabled:
+        program = _msvc_program(args, env)
+        if program:
+            return _msvc_spawn(sh, escape, cmd, args, env, program)
 
     return exec_spawn([sh, '/C', escape(' '.join(args))], env)
 
