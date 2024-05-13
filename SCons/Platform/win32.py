@@ -31,9 +31,11 @@ selection method.
 import os
 import os.path
 import platform
-import re
 import sys
 import tempfile
+
+from collections import namedtuple
+import re
 
 from SCons.Platform.posix import exitvalmap
 from SCons.Platform import TempFileMunge
@@ -206,208 +208,405 @@ def exec_spawn(l, env):
 
 # configuration for msvc special handling
 
-#  rewrite  filter  action
-#  -------  ------  ----------------------------------
-#  True     False   rewrite streams
-#  True     True    filter records and rewrite streams
-#  False    False   skip processing
-#  False    True    skip processing
+class _MSVCRewrite:
 
-msvc_rewrite_enabled = True
-msvc_filter_enabled = False
+    #  rewrite  filter  action
+    #  -------  ------  ----------------------------------
+    #  True     False   rewrite streams
+    #  True     True    filter records and rewrite streams
+    #  False    False   skip processing
+    #  False    True    skip processing
 
-msvc_suppress_cl = False
-msvc_suppress_link = False
+    _msvc_common_environ = [
+        'filter_enabled',
+        'filter_debug',
+        'write_banner_full',
+        'write_banner_stderr',
+        'write_diagnostic_stderr',
+        'write_warning_stderr',
+        'write_error_stderr',
+    ]
 
-# special handling for msvc cl/link output
+    MSVCProgramConfig = namedtuple("MSVCProgramConfig", [
+        'program',
+    ] + _msvc_common_environ + [
+        're_banner',
+        're_error',
+        're_warning',
+        'filter_func',
+        'filter_debug_stderr',
+    ])
 
-re_msvc_program = re.compile(r'^(?P<basename>cl|link)(\.exe)?$', re.IGNORECASE)
+    MSVCConfig = namedtuple("MSVCConfig", [
+        'rewrite_enabled',
+    ] + _msvc_common_environ + [
+        'filter_debug_stderr',
+    ])
 
-re_msvc_redirect_stdout = re.compile(r'^[1]?>(?P<stderr>&\s*2)*')
-re_msvc_redirect_stderr = re.compile(r'^[2]?>(?P<stdout>&\s*1)*')
+    environ_prefix = 'SCONS_MSVC'
+    environ_enabled_symbols = ('1', 'true', 'yes', 't', 'y')
 
-def _msvc_program(args, env):
+    @classmethod
+    def _environ_enabled(cls, key, default=False):
+        rval = os.environ.get(key)
+        if rval is None:
+            return default
+        rval = bool(rval.lower() in cls.environ_enabled_symbols)
+        return rval
 
-    # TODO: need method to verify:
-    #     link == msvc link.exe
-    #     cl == msvc cl.exe
+    cfg = None
+    cfg_dict = None
 
-    m_program = re_msvc_program.match(args[0])
-    if not m_program:
-        return None
+    @classmethod
+    def _initialize(cls):
 
-    for arg in args:
-        if re_msvc_redirect_stdout.match(arg):
+        config_dict = {}
+
+        for key, suffix, default in [
+            ('rewrite_enabled', 'OUTPUT_REWRITE', False),
+            ('filter_enabled', 'OUTPUT_FILTER', False),
+            ('filter_debug', 'OUTPUT_FILTER_DEBUG', False),
+            ('write_banner_full', 'WRITE_BANNER_FULL', True),
+            ('write_banner_stderr', 'WRITE_BANNER_STDERR', False),
+            ('write_diagnostic_stderr', 'WRITE_DIAGNOSTIC_STDERR', False),
+            ('write_warning_stderr', 'WRITE_WARNING_STDERR', True),
+            ('write_error_stderr', 'WRITE_ERROR_STDERR', True),
+
+        ]:
+            config_dict[key] = cls._environ_enabled(
+                '_'.join([cls.environ_prefix, suffix]), default
+            )
+
+        config_dict['filter_debug_stderr'] = config_dict['write_diagnostic_stderr']
+
+        cls.cfg = cls.MSVCConfig(**config_dict)
+        cls.cfg_dict = config_dict
+
+    program_cfg = {}
+
+    @classmethod
+    def _program_register(cls, program, envsuffix, re_banner, re_error, re_warning, filter_func):
+
+        basename, ext = os.path.splitext(program)
+
+        program_dict = {
+            'program': basename,
+            're_banner': re_banner,
+            're_error': re_error,
+            're_warning': re_warning,
+            'filter_func': filter_func,
+        }
+
+        for key, suffix in [
+            ('filter_enabled', 'OUTPUT_FILTER'),
+            ('filter_debug', 'OUTPUT_FILTER_DEBUG'),
+            ('write_banner_full', 'WRITE_BANNER_FULL'),
+            ('write_banner_stderr', 'WRITE_BANNER_STDERR'),
+            ('write_diagnostic_stderr', 'WRITE_DIAGNOSTIC_STDERR'),
+            ('write_warning_stderr', 'WRITE_WARNING_STDERR'),
+            ('write_error_stderr', 'WRITE_ERROR_STDERR'),
+
+        ]:
+            default = cls.cfg_dict[key]
+            program_dict[key] = cls._environ_enabled(
+                '_'.join([cls.environ_prefix, suffix, envsuffix]), default
+            )
+
+        program_dict['filter_debug_stderr'] = program_dict['write_diagnostic_stderr']
+
+        program_cfg = cls.MSVCProgramConfig(**program_dict)
+
+        cls.program_cfg[basename] = program_cfg
+        cls.program_cfg[program] = program_cfg
+
+        return program_cfg
+
+    re_redirect_stream = re.compile(r'^[12]?>')
+
+    @classmethod
+    def get_program_config(cls, args, env):
+
+        # TODO(JCB): no reliable method to verify (e.g., man-in-the-middle):
+        #     link == msvc link.exe
+        #     cl == msvc cl.exe
+
+        if not cls.cfg.rewrite_enabled:
             return None
-        if re_msvc_redirect_stderr.match(arg):
+
+        program = args[0].lower()
+        program_cfg = cls.program_cfg.get(program)
+        if not program_cfg:
             return None
 
-    program = m_program.group('basename').lower()
-    return program
+        for arg in args:
+            if cls.re_redirect_stream.match(arg):
+                return None
 
-msvc_banner_write_stdout = True
-msvc_banner_write_full = True
+        # TODO(JCB) check known argument(s) for program?
 
-re_msvc_banner = re.compile('^(?P<full>(?P<version>Microsoft\s+.+\n)Copyright\s+.+\n\n)', re.MULTILINE | re.IGNORECASE)
-re_msvc_banner_group = 'full' if msvc_banner_write_full else 'version'
+        return program_cfg
 
-def _msvc_banner(content):
+    # program banner
 
-    m_banner = re_msvc_banner.match(content)
-    if m_banner:
-        banner = m_banner.group(re_msvc_banner_group)
-        content = content[m_banner.span()[-1]:]
-    else:
-        banner = None
+    re_banner_any = re.compile('^(?P<full>(?P<version>Microsoft\s+.+\n)Copyright\s+.+\n\n)', re.MULTILINE | re.IGNORECASE)
 
-    return banner, content
+    @classmethod
+    def _program_banner(cls, program_cfg, content):
 
-# https://stackoverflow.com/questions/62878395/regex-for-illegal-filenames-in-windows
-re_filename_restrict = re.compile(r'^[^\x00-\x1F\xA5\\?*:\"";|\/<>]+$')
-re_filename_legal = re.compile(r'^(?!(?:\x20+.+)?$)(?!(?:\..+)?$).+(?<![\x20.])$')
+        m_banner = program_cfg.re_banner.match(content)
+        if m_banner:
+            banner_group = 'full' if program_cfg.write_banner_full else 'version'
+            banner = m_banner.group(banner_group)
+            content = content[m_banner.span()[-1]:]
+        else:
+            banner = None
 
-def _msvc_suppress_cl_filename(line, argstr):
+        return banner, content
 
-    if not re_filename_restrict.match(line):
-        return None
+    # cl filter (ASSUMES: /c filename)
 
-    if not re_filename_legal.match(line):
-        return None
+    re_cl_filespec = [
+        # match quoted filename: ' /c " my file .c" '
+        re.compile(r'\s/c\s+"(?P<pathspec>[^"]+)"(?:\s|$)'),
+        # match bare filename: ' /c myfile.c '
+        re.compile(r'\s/c\s+(?P<pathspec>[^"\s]+)(?:\s|$)'),
+    ]
 
-    _, tail = os.path.split(line)
+    @classmethod
+    def _filter_cl_filename_cmdline(cls, line, argstr):
+        # method:
+        #   match command file for pathspec ' /c pathpec '
+        #   get file name from pathspec
+        #   check if file name matches current record
 
-    if not tail:
-        return None
+        if not line:
+            return False
 
-    # TODO: regex instead of blind search?
+        m_filespec = None
 
-    if tail not in argstr:
-        return None
+        for re_filespec in cls.re_cl_filespec:
+            m_filespec = re_filespec.search(argstr)
+            if m_filespec:
+                break
 
-    return line
+        if not m_filespec:
+            return False
 
-def _msvc_suppress_cl_message(program, line, argstr):
+        pathspec = m_filespec.group('pathspec')
 
-    message = _msvc_suppress_cl_filename(line, argstr)
-    if message:
-        return message
+        _, filename = os.path.split(pathspec)
+        if not filename:
+            return False
 
-    return None
+        if filename == line:
+            return True
 
-re_msvc_link_outspec = re.compile(r'\s/OUT:(?P<pathspec>"[^"]+"|\S+)(?:\s|$)', re.IGNORECASE)
+        if filename == line.rstrip():
+            return True
 
-def _msvc_suppress_link_libexp(line, argstr):
+        return False
 
-    m_outspec = re_msvc_link_outspec.search(argstr)
-    if not m_outspec:
-        return None
+    @classmethod
+    def _filter_cl_filename_argstr(cls, line, argstr):
+        # (unreliable) method:
+        #   assume line contains filename
+        #   construct regex for command-line pathspec suffix
+        #   check if regex matches argument string
 
-    pathspec = m_outspec.group('pathspec')
+        if not line:
+            return False
 
-    pathbasename, fileext = os.path.splitext(pathspec)
-    if not fileext:
-        return None
+        # TODO(JCB): correctness not guaranteed
+        regex_str = r'["\s/\\]' + re.escape(line.rstrip()) + r'(?:["\s]|$)'
+        re_filespec = re.compile(regex_str)
 
-    pathprefix, basename = os.path.split(pathbasename)
-    if not basename:
-        return None
+        if re_filespec.search(argstr):
+            return True
 
-    if not re_filename_restrict.match(basename):
-        return None
+        return False
 
-    if not re_filename_legal.match(basename):
-        return None
+    @classmethod
+    def _filter_cl_filename(cls, line, argstr):
 
-    re_pathbasename = re.escape(pathbasename)
+        if cls._filter_cl_filename_cmdline(line, argstr):
+            return True
 
-    regex_str = fr'\s"?(?P<lib>{re_pathbasename}\.lib)"?.*"?(?P<exp>{re_pathbasename}\.exp)"?'
-    re_libexp = re.compile(regex_str, re.IGNORECASE)
+        if cls._filter_cl_filename_argstr(line, argstr):
+            return True
 
-    if not re_libexp.search(line):
-        return None
+        return False
 
-    return line
+    @classmethod
+    def _filter_cl_record(cls, program_cfg, line, argstr):
 
-def _msvc_suppress_link_message(program, line, argstr):
+        if cls._filter_cl_filename(line, argstr):
+            return True
 
-    message = _msvc_suppress_link_libexp(line, argstr)
-    if message:
-        return message
+        return False
 
-    return None
+    # link filter
 
-msvc_suppress_program_map = {
-    'cl': _msvc_suppress_cl_message if (msvc_filter_enabled and msvc_suppress_cl) else None,
-    'link': _msvc_suppress_link_message if (msvc_filter_enabled and msvc_suppress_link) else None,
-}
+    re_link_outspec = [
+        # match quoted filename: ' "/OUT: my program .exe" '
+        re.compile(r'\s"/OUT:(?P<pathspec>[^"]+)"(?:\s|$)'),
+        # match bare filename: ' /OUT: myprogram.exe '
+        re.compile(r'\s/OUT:(?P<pathspec>\S+)(?:\s|$)'),
+    ]
 
-re_msvc_errwarn = re.compile(r'^.+\s+(warning|error)\s+[A-Z]+[0-9]+\s*\:.+$', re.IGNORECASE)
+    @classmethod
+    def _filter_link_libexp(cls, line, argstr):
+        # method:
+        #   match command file for outspec ' /OUT:outspec '
+        #   get the basename from the output file name
+        #   build regex for basename.lib and basename.exp
+        #   check regex matches current record
 
-def _msvc_errwarn(line):
+        if not line:
+            return False
 
-    if re_msvc_errwarn.match(line):
+        m_outspec = None
+
+        for re_outspec in cls.re_link_outspec:
+            m_outspec = re_outspec.search(argstr)
+            if m_outspec:
+                break
+
+        if not m_outspec:
+            return False
+
+        pathspec = m_outspec.group('pathspec')
+
+        pathbasename, fileext = os.path.splitext(pathspec)
+        if not fileext:
+            return False
+
+        pathprefix, basename = os.path.split(pathbasename)
+        if not basename:
+            return False
+
+        re_pathbasename = re.escape(pathbasename)
+
+        regex_str = fr'\s"?(?P<lib>{re_pathbasename}\.lib)"?.*"?(?P<exp>{re_pathbasename}\.exp)"?'
+        re_libexp = re.compile(regex_str, re.IGNORECASE)
+
+        if not re_libexp.search(line):
+            return False
+
         return True
 
-    return False
+    @classmethod
+    def _filter_link_record(cls, program_cfg, line, argstr):
 
-def _msvc_spawn(sh, escape, cmd, args, env, program):
+        if cls._filter_link_libexp(line, argstr):
+            return True
 
-    # copy arguments for local modification
-    args = list(args)
+        return False
 
-    tmp_stdout, tmp_stdout_name = tempfile.mkstemp()
-    os.close(tmp_stdout)
+    # destination stream
 
-    # redirect stdout and stderr: 1>tmpfile 2>&1
-    args.append(f'1>"{tmp_stdout_name}"')
-    args.append("2>&1")
+    re_error_cl = re.compile(r'^.+\s(error)\s(D|C)[0-9]{3,4}\s*\:.+$')
+    re_warning_cl = re.compile(r'^.+\s(warning)\s(D|C)[0-9]{3,4}\s*\:.+$')
 
-    argstr = ' '.join(args)
-    ret = exec_spawn([sh, '/C', escape(argstr)], env)
+    re_error_link = re.compile(r'^.+\s(error)\s(LNK)[0-9]{3,4}\s*\:.+$')
+    re_warning_link = re.compile(r'^.+\s(warning)\s(LNK)[0-9]{3,4}\s*\:.+$')
 
-    try:
-        with open(tmp_stdout_name, "rb") as tmp_stdout:
+    # TODO(JCB) need note regex?
 
-            do_once = True
-            while do_once:
-                do_once = False
+    @classmethod
+    def _write_stderr(cls, program_cfg, line):
 
-                content = tmp_stdout.read()
-                if not content:
-                    break
+        if program_cfg.re_error.match(line):
+            return program_cfg.write_error_stderr
 
-                content = content.decode("oem", "replace")
-                content = content.replace("\r\n", "\n")
+        if program_cfg.re_warning.match(line):
+            return program_cfg.write_warning_stderr
 
-                banner, content = _msvc_banner(content)
-                if banner:
-                    # original destination streams for banner: cl stderr, link stdout
-                    # local assignment in case system streams are modified during runtime
-                    stream = sys.stdout if msvc_banner_write_stdout else sys.stderr
-                    stream.write(banner)
+        return program_cfg.write_diagnostic_stderr
 
-                if not content:
-                    break
+    # stream rewriting and optional record filtering
 
-                # assumption: only *one* matching line is suppressed
-                suppress_func = msvc_suppress_program_map.get(program, False)
+    @classmethod
+    def spawn(cls, sh, escape, cmd, args, env, program_cfg):
 
-                for linenum, line in enumerate(content.splitlines()):
+        # copy arguments for local modification
+        args = list(args)
 
-                    if suppress_func:
-                        message = suppress_func(program, line, argstr)
-                        if message:
-                            suppress_func = None
-                            continue
+        tmp_stdout, tmp_stdout_name = tempfile.mkstemp()
+        os.close(tmp_stdout)
 
-                    stream = sys.stderr if _msvc_errwarn(line) else sys.stdout
-                    stream.write(line + '\n')
+        # redirect stdout and stderr: 1>tmpfile 2>&1
+        args.append(f'1>{tmp_stdout_name}')
+        args.append('2>&1')
 
-        os.remove(tmp_stdout_name)
-    except OSError:
-        pass
+        argstr = ' '.join(args)
+        ret = exec_spawn([sh, '/C', escape(argstr)], env)
 
-    return ret
+        try:
+            with open(tmp_stdout_name, 'rb') as tmp_stdout:
+
+                do_once = True
+                while do_once:
+                    do_once = False
+
+                    content = tmp_stdout.read()
+                    if not content:
+                        break
+
+                    content = content.decode('oem', 'replace')
+                    content = content.replace('\r\n', '\n')
+
+                    banner, content = cls._program_banner(program_cfg, content)
+                    if banner:
+                        # local assignment in case system streams are modified during runtime
+                        stream = sys.stderr if program_cfg.write_banner_stderr else sys.stdout
+                        stream.write(banner)
+
+                    if not content:
+                        break
+
+                    # assume only *ONE* matching line is suppressed
+                    filter_func = program_cfg.filter_func if program_cfg.filter_enabled else None
+
+                    for linenum, line in enumerate(content.splitlines()):
+
+                        if filter_func:
+                            if filter_func(program_cfg, line, argstr):
+                                if program_cfg.filter_debug:
+                                    stream = sys.stderr if program_cfg.filter_debug_stderr else sys.stdout
+                                    stream.write(f'***FILTER***: ')
+                                    stream.write(line)
+                                    stream.write('\n')
+                                filter_func = None
+                                continue
+
+                        stream = sys.stderr if cls._write_stderr(program_cfg, line) else sys.stdout
+                        stream.write(line)
+                        stream.write('\n')
+
+            os.remove(tmp_stdout_name)
+        except OSError:
+            pass
+
+        return ret
+
+    @classmethod
+    def setup(cls):
+
+        cls._initialize()
+
+        cls._program_register(
+            'cl.exe', 'CL',
+            cls.re_banner_any, cls.re_error_cl, cls.re_warning_cl,
+            cls._filter_cl_record
+        )
+
+        cls._program_register(
+            'link.exe', 'LINK',
+            cls.re_banner_any, cls.re_error_link, cls.re_warning_link,
+            cls._filter_link_record
+        )
+
+_MSVCRewrite.setup()
 
 # special handling for msvc output hook
 
@@ -416,10 +615,9 @@ def spawn(sh, escape, cmd, args, env):
         sys.stderr.write("scons: Could not find command interpreter, is it in your PATH?\n")
         return 127
 
-    if msvc_rewrite_enabled:
-        program = _msvc_program(args, env)
-        if program:
-            return _msvc_spawn(sh, escape, cmd, args, env, program)
+    program_cfg = _MSVCRewrite.get_program_config(args, env)
+    if program_cfg:
+        return _MSVCRewrite.spawn(sh, escape, cmd, args, env, program_cfg)
 
     return exec_spawn([sh, '/C', escape(' '.join(args))], env)
 
