@@ -30,6 +30,8 @@ import json
 import os
 import re
 import sys
+import time
+from collections import namedtuple
 from contextlib import suppress
 from subprocess import DEVNULL, PIPE
 from pathlib import Path
@@ -339,6 +341,162 @@ def _force_vscmd_skip_sendtelemetry(env):
     return True
 
 
+_NormalizedPath = namedtuple('_NormalizedPath', [
+    'path_orig',
+    'path_norm',
+    'path_key',
+    'path_exists',
+])
+
+
+_cache_normalize_path = {}
+
+def _normalized_path(p):
+
+    path_norm = os.path.normcase(os.path.normpath(p))
+
+    normpath_t = _cache_normalize_path.get(path_norm)
+    if normpath_t is None:
+
+        normpath_t = _NormalizedPath(
+            path_orig=p,
+            path_norm=path_norm,
+            path_key=path_norm,
+            path_exists=bool(os.path.exists(path_norm)),
+        )
+
+        _cache_normalize_path[normpath_t.path_norm] = normpath_t
+
+    return normpath_t
+
+
+_cache_program_paths = {}
+
+def _find_program_paths(searchlist, proglist):
+
+    searchlist_t = tuple(searchlist)
+    proglist_t = tuple(proglist)
+    key = (searchlist_t, proglist_t)
+
+    program_pathlist = _cache_program_paths.get(key)
+    if program_pathlist is None:
+
+        program_pathlist = []
+        if searchlist:
+
+            prog_pathmap = {}
+            progname_list = [os.path.normcase(progname) for progname in proglist if progname]
+
+            for p in searchlist:
+                if p:
+                    p = p.strip()
+                if not p:
+                    continue
+                p_normpath_t = _normalized_path(p)
+                if not p_normpath_t.path_exists:
+                    continue
+                for progname in progname_list:
+                    progpath = os.path.join(p_normpath_t.path_orig, progname)
+                    if not os.path.exists(progpath):
+                        continue
+                    pathlist = prog_pathmap.setdefault(progname, [])
+                    if p_normpath_t in pathlist:
+                        continue
+                    pathlist.append(p_normpath_t)
+
+            for key, val in prog_pathmap.items():
+                if not val:
+                    continue
+                program_pathlist.append(val[0])
+
+        _cache_program_paths[key] = program_pathlist
+
+    return program_pathlist
+
+
+_cache_contains_paths = {}
+
+def _find_member_paths(searchlist, pathlist):
+
+    searchlist_t = tuple(searchlist)
+    proglist_t = tuple(pathlist)
+    key = (searchlist_t, proglist_t)
+
+    contains_pathlist = _cache_contains_paths.get(key)
+    if contains_pathlist is None:
+
+        contains_pathlist = []
+        knownpaths = set()
+
+        for p in pathlist:
+            if p:
+                p = p.strip()
+            if not p:
+                continue
+            p_normpath_t = _normalized_path(p)
+            knownpaths.add(p_normpath_t.path_key)
+
+        for p in searchlist:
+            if p:
+                p = p.strip()
+            if not p:
+                continue
+            p_normpath_t = _normalized_path(p)
+            if p_normpath_t.path_key not in knownpaths:
+                continue
+            contains_pathlist.append(p_normpath_t)
+
+        _cache_contains_paths[key] = contains_pathlist
+
+    return contains_pathlist
+
+
+def _normenv_extend_path(normenv, evar, path_additions):
+
+    if path_additions:
+
+        path_seen = {
+            _normalized_path(elem).path_key
+            for elem in [
+                p.strip()
+                for p in normenv.get(evar, '').split(os.pathsep)
+                if p
+            ]
+            if elem
+        }
+
+        is_undefined = True if evar not in normenv else False
+
+        for normpath_t in path_additions:
+
+            if normpath_t.path_key in path_seen:
+                continue
+
+            path_seen.add(normpath_t.path_key)
+
+            if is_undefined:
+                is_undefined = False
+                normenv[evar] = normpath_t.path_orig
+            else:
+                normenv[evar] += os.pathsep + normpath_t.path_orig
+
+_PSMODULEPATH_VAR = "PSModulePath"
+
+_PSMODULEPATH_PATHS_PS7 = [
+    os.path.expandvars(r"%USERPROFILE%\Documents\PowerShell\Modules"),
+    os.path.expandvars(r"%ProgramFiles%\PowerShell\Modules"),
+    os.path.expandvars(r"%ProgramFiles%\PowerShell\7\Modules"),
+]
+
+_PSMODULEPATH_PATHS_PS5 = [
+    os.path.expandvars(r"%USERPROFILE%\Documents\WindowsPowerShell\Modules"),
+    os.path.expandvars(r"%ProgramFiles%\WindowsPowerShell\Modules"),
+    os.path.expandvars(r"%windir%\System32\WindowsPowerShell\v1.0\Modules"),
+]
+
+_PSMODULEPATH_PATHS = _PSMODULEPATH_PATHS_PS7 + _PSMODULEPATH_PATHS_PS5
+
+
 def normalize_env(env, keys, force: bool=False):
     """Given a dictionary representing a shell environment, add the variables
     from os.environ needed for the processing of .bat files; the keys are
@@ -363,42 +521,59 @@ def normalize_env(env, keys, force: bool=False):
             else:
                 debug("keys: skipped[%s]", k)
 
-    # add some things to PATH to prevent problems:
+    # Add some things to PATH to prevent problems.
+    normenv_path_additions = []
+
+    # The systemroot directory.
+    sysroot_dir = os.environ.get("SystemRoot", os.environ.get("windir", r"C:\Windows"))
+
     # Shouldn't be necessary to add system32, since the default environment
     # should include it, but keep this here to be safe (needed for reg.exe)
-    sys32_dir = os.path.join(
-        os.environ.get("SystemRoot", os.environ.get("windir", r"C:\Windows")), "System32"
-    )
-    if sys32_dir not in normenv["PATH"]:
-        normenv["PATH"] = normenv["PATH"] + os.pathsep + sys32_dir
+    sys32_dir = os.path.join(sysroot_dir, "System32")
 
     # Without Wbem in PATH, vcvarsall.bat has a "'wmic' is not recognized"
     # error starting with Visual Studio 2017, although the script still
     # seems to work anyway.
     sys32_wbem_dir = os.path.join(sys32_dir, 'Wbem')
-    if sys32_wbem_dir not in normenv['PATH']:
-        normenv['PATH'] = normenv['PATH'] + os.pathsep + sys32_wbem_dir
 
-    # ProgramFiles for PowerShell 7 Path and PSModulePath
-    progfiles_dir = os.environ.get("ProgramFiles")
-    if not progfiles_dir:
-        sysroot_drive, _ = os.path.splitdrive(sys32_dir)
-        sysroot_path = sysroot_drive + os.sep
-        progfiles_dir = os.path.join(sysroot_path, "Program Files")
+    # Windows default order: system32, Wbem, SystemRoot.
+    # SystemRoot is not added for consistency with earlier behavior.
+    normenv_path_additions.append(_normalized_path(sys32_dir))
+    normenv_path_additions.append(_normalized_path(sys32_wbem_dir))
+    # normenv_path_additions.append(_normalized_path(sysroot_dir))
 
-    # Powershell 7
-    progfiles_ps_dir = os.path.join(progfiles_dir, "PowerShell", "7")
-    if progfiles_ps_dir not in normenv["PATH"]:
-        normenv["PATH"] = normenv["PATH"] + os.pathsep + progfiles_ps_dir
-
-    # Without Powershell in PATH, an internal call to a telemetry
-    # function (starting with a VS2019 update) can fail
+    # Without powershell.exe in PATH, an internal call to a telemetry
+    # function (starting with a VS2019 update) can fail.
     # Note can also set VSCMD_SKIP_SENDTELEMETRY to avoid this.
     sys32_ps_dir = os.path.join(sys32_dir, r'WindowsPowerShell\v1.0')
-    if sys32_ps_dir not in normenv['PATH']:
-        normenv['PATH'] = normenv['PATH'] + os.pathsep + sys32_ps_dir
 
-    debug("PATH: %s", normenv['PATH'])
+    # Powershell v7 and v5 executable paths in order found on system path.
+    # The VS vcpkg componenent searches the system path for the powershell
+    # executables.
+    psexecutable_pathlist = _find_program_paths(
+        os.environ.get("PATH", "").split(os.pathsep) + [sys32_ps_dir],
+        ["pwsh.exe", "powershell.exe"],
+    )
+
+    # Add powershell 7 and 5 executable paths in order encountered.
+    # Force powershell 5 path if necessary.
+    normenv_path_additions.extend(psexecutable_pathlist)
+    normenv_path_additions.append(_normalized_path(sys32_ps_dir))
+
+    # Extend PATH.
+    _normenv_extend_path(normenv, "PATH", normenv_path_additions)
+    debug("PATH: %s", normenv.get("PATH", ""))
+
+    # PSModulePath path elements from known default installation locations
+    # in order found on system PSModulePath.
+    normenv_psmodulepath_additions = _find_member_paths(
+        os.environ.get(_PSMODULEPATH_VAR, "").split(os.pathsep), _PSMODULEPATH_PATHS
+    )
+
+    # Extend PSModulePath.
+    _normenv_extend_path(normenv, _PSMODULEPATH_VAR, normenv_psmodulepath_additions)
+    debug("%s: %s", _PSMODULEPATH_VAR, normenv.get(_PSMODULEPATH_VAR, ""))
+
     return normenv
 
 
@@ -423,9 +598,15 @@ def get_output(vcbat, args=None, env=None, skip_sendtelemetry=False):
         debug("Calling '%s'", vcbat)
         cmd_str = '"%s" & set' % vcbat
 
+    beg_time = time.time()
+
     cp = SCons.Action.scons_subproc_run(
         env, cmd_str, stdin=DEVNULL, stdout=PIPE, stderr=PIPE,
     )
+
+    end_time = time.time()
+    elapsed_time = end_time - beg_time
+    debug("Elapsed %.2fs", elapsed_time)
 
     # Extra debug logic, uncomment if necessary
     # debug('stdout:%s', cp.stdout)
