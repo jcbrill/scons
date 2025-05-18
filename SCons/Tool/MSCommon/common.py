@@ -547,9 +547,11 @@ def normalize_env(env, keys, force: bool=False):
     # Note can also set VSCMD_SKIP_SENDTELEMETRY to avoid this.
     sys32_ps_dir = os.path.join(sys32_dir, r'WindowsPowerShell\v1.0')
 
-    # Powershell v7 and v5 executable paths in order found on system path.
-    # The VS vcpkg componenent searches the system path for the powershell
-    # executables.
+    # Add the powershell v7 and v5 executable paths in the order found on
+    # the system path.
+    # The order of the powershell paths for the VS vcpkg does not matter.
+    # The system path is searched for pwsh.exe (v7) first and then 
+    # powershell.exe (v5).
     psexecutable_pathlist = _find_program_paths(
         os.environ.get("PATH", "").split(os.pathsep) + [sys32_ps_dir],
         ["pwsh.exe", "powershell.exe"],
