@@ -486,6 +486,8 @@ _PSMODULEPATH_PATHS_PS7 = [
     os.path.expandvars(r"%USERPROFILE%\Documents\PowerShell\Modules"),
     os.path.expandvars(r"%ProgramFiles%\PowerShell\Modules"),
     os.path.expandvars(r"%ProgramFiles%\PowerShell\7\Modules"),
+    os.path.expandvars(r"%ProgramFiles%\WindowsPowerShell\Modules"),
+    os.path.expandvars(r"%windir%\System32\WindowsPowerShell\v1.0\Modules"),
 ]
 
 _PSMODULEPATH_PATHS_PS5 = [
