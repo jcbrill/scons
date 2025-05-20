@@ -72,6 +72,8 @@ VS_VC_VARS = [
     'windir', # windows directory (SystemRoot not available in 95/98/ME)
     'VCPKG_DISABLE_METRICS',
     'VCPKG_ROOT',
+    'POWERSHELL_TELEMETRY_OPTOUT',
+    'PSDisableModuleAnalysisCacheCleanup',
 ]
 
 class MSVCCacheInvalidWarning(SCons.Warnings.WarningOnByDefault):
@@ -552,7 +554,7 @@ def normalize_env(env, keys, force: bool=False):
     # Add the powershell v7 and v5 executable paths in the order found on
     # the system path.
     # The order of the powershell paths for the VS vcpkg does not matter.
-    # The system path is searched for pwsh.exe (v7) first and then 
+    # The system path is searched for pwsh.exe (v7) first and then
     # powershell.exe (v5).
     psexecutable_pathlist = _find_program_paths(
         os.environ.get("PATH", "").split(os.pathsep) + [sys32_ps_dir],
