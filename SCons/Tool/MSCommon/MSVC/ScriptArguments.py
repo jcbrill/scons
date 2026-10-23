@@ -573,7 +573,8 @@ def _msvc_version_toolsets(msvc, vc_dir):
         toolsets_sxs, toolsets_full = _toolset_version_cache[msvc.version]
     else:
         toolsets_sxs, toolsets_full = _msvc_read_toolset_folders(msvc, vc_dir)
-        _toolset_version_cache[msvc.version] = toolsets_sxs, toolsets_full
+        # TODO(JCB): DISABLE CACHE FOR MSVC_CHANNEL
+        # _toolset_version_cache[msvc.version] = toolsets_sxs, toolsets_full
 
     return toolsets_sxs, toolsets_full
 
@@ -583,7 +584,8 @@ def _msvc_default_toolset(msvc, vc_dir):
         toolset_default = _toolset_default_cache[msvc.version]
     else:
         toolset_default = _msvc_read_toolset_default(msvc, vc_dir)
-        _toolset_default_cache[msvc.version] = toolset_default
+        # TODO(JCB): DISABLE CACHE FOR MSVC_CHANNEL
+        # _toolset_default_cache[msvc.version] = toolset_default
 
     return toolset_default
 

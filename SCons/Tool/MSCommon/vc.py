@@ -98,6 +98,9 @@ class VSWhereUserError(MSVCUserError):
 class UnsupportedVersion(VisualCException):
     pass
 
+class UnsupportedChannel(VisualCException):
+    pass
+
 class BatchFileExecutionError(VisualCException):
     pass
 
@@ -779,6 +782,29 @@ def _skip_sendtelemetry(env):
     # arm32 process, arm64 host, VS2019+
     return True
 
+# MSVC_CHANNEl:
+#     Release = [True]
+#     Preview = [False]
+#     Any = [False, True]
+
+def _vc_channel_map(pairs):
+    channel_map = {}
+    for symbol_list, key_list in pairs:
+        key_t = tuple(key_list)
+        for symbol in symbol_list:
+            if isinstance(symbol, str):
+                for sym in [symbol, symbol.upper(), symbol.lower()]:
+                    channel_map[symbol] = key_t
+            else:
+                channel_map[symbol] = key_t
+    return channel_map
+
+_VC_CHANNEL_MAP = _vc_channel_map([
+    (['Rel', 'Release', '', None], [True]),
+    (['Pre', 'Preview', 'Ins', 'Insiders'], [False]),
+    (['Any', '*'], [False, True]),
+])
+
 # If you update this, update SupportedVSList in Tool/MSCommon/vs.py, and the
 # MSVC_VERSION documentation in Tool/msvc.xml.
 _VCVER = [
@@ -1431,7 +1457,7 @@ class _VSWhere(MSVC.Util.AutoInitialize):
 
         vswhere_json = cls._vswhere_query_json_output(
             vswhere_norm,
-            ['-all', '-products', '*']
+            ['-all', '-products', '*', '-prerelease']
         )
 
         if not vswhere_json:
@@ -1542,11 +1568,12 @@ class _VSWhere(MSVC.Util.AutoInitialize):
 
 _cache_pdir_vswhere_queries = {}
 
-def _find_vc_pdir_vswhere(msvc_version, vswhere_exe):
+def _find_vc_pdir_vswhere(msvc_version, msvc_channel, vswhere_exe):
     """ Find the MSVC product directory using the vswhere program.
 
     Args:
         msvc_version: MSVC version to search for
+        msvc_channel: msvc channel (Release, Preview, Any)
         vswhere_exe: vswhere executable or None
 
     Returns:
@@ -1562,25 +1589,38 @@ def _find_vc_pdir_vswhere(msvc_version, vswhere_exe):
     if not msvc_map:
         return None
 
-    rval = _cache_pdir_vswhere_queries.get(msvc_version, UNDEFINED)
-    if rval != UNDEFINED:
-        debug('msvc_version=%s, pdir=%s', repr(msvc_version), repr(rval))
-        return rval
-
     if msvc_version not in _VSWHERE_SUPPORTED_VCVER:
         debug("Unknown version of MSVC: %s", msvc_version)
         raise UnsupportedVersion("Unknown version %s" % msvc_version)
 
-    is_release = True
-    key = (msvc_version, is_release)
+    if msvc_channel not in _VC_CHANNEL_MAP:
+        debug("Unknown version of MSVC_CHANNEL: %s", msvc_channel)
+        raise UnsupportedChannel("Unknown channel %s" % msvc_channel)
 
-    msvc_instances = msvc_map.get(key, UNDEFINED)
-    if msvc_instances == UNDEFINED:
-        debug(
-            'msvc instances lookup failed: msvc_version=%s, is_release=%s',
-            repr(msvc_version), repr(is_release)
-        )
-        msvc_instances = []
+    vc_channels = _VC_CHANNEL_MAP[msvc_channel]
+
+    cache_key = (msvc_version, vc_channels)
+
+    rval = _cache_pdir_vswhere_queries.get(cache_key, UNDEFINED)
+    if rval != UNDEFINED:
+        debug('msvc_version=%s, msvc_channels=%s, pdir=%s', repr(msvc_version), repr(vc_channels), repr(rval))
+        return rval
+
+    msvc_instances = []
+    for is_release in vc_channels:
+
+        key = (msvc_version, is_release)
+
+        key_instances = msvc_map.get(key, UNDEFINED)
+        if key_instances == UNDEFINED:
+            debug(
+                'msvc instances lookup failed: msvc_version=%s, is_release=%s',
+                repr(msvc_version), repr(is_release)
+            )
+            continue
+
+        msvc_instances.extend(key_instances)
+        break
 
     save_pdir_kind = []
 
@@ -1611,7 +1651,7 @@ def _find_vc_pdir_vswhere(msvc_version, vswhere_exe):
     MSVC.Kind.msvc_version_register_kind(msvc_version, kind_t)
 
     debug('msvc_version=%s, pdir=%s', repr(msvc_version), repr(pdir))
-    _cache_pdir_vswhere_queries[msvc_version] = pdir
+    _cache_pdir_vswhere_queries[cache_key] = pdir
 
     return pdir
 
@@ -1718,12 +1758,15 @@ def _find_vc_pdir_registry(msvc_version):
 
     return pdir
 
-def _find_vc_pdir(msvc_version, vswhere_exe):
+def _find_vc_pdir(msvc_version, msvc_channel, vswhere_exe):
     """Find the MSVC product directory for the given version.
 
     Args:
         msvc_version: str
             msvc version (major.minor, e.g. 10.0)
+
+        msvc_channel: str
+            msvc channel (e.g., Release, Preview, Any) or None
 
         vswhere_exe: str
             vswhere executable or None
@@ -1733,16 +1776,18 @@ def _find_vc_pdir(msvc_version, vswhere_exe):
 
     Raises:
         UnsupportedVersion: if the version is not known by this file.
+        UnsupportedChannel: if the channel is not known.
 
         UnsupportedVersion inherits from VisualCException.
+        UnsupportedChannel inherits from VisualCException.
 
     """
 
     if msvc_version in _VSWHERE_SUPPORTED_VCVER:
 
-        pdir = _find_vc_pdir_vswhere(msvc_version, vswhere_exe)
+        pdir = _find_vc_pdir_vswhere(msvc_version, msvc_channel, vswhere_exe)
         if pdir:
-            debug('VC found: %s, dir=%s', repr(msvc_version), repr(pdir))
+            debug('VC found: %s, %s, dir=%s', repr(msvc_version), repr(msvc_channel), repr(pdir))
             return pdir
 
     elif msvc_version in _VCVER_TO_PRODUCT_DIR:
@@ -1774,14 +1819,18 @@ def find_vc_pdir(msvc_version, env=None):
 
     Raises:
         UnsupportedVersion: if the version is not known by this file.
+        UnsupportedChannel: if the channel is not known.
 
         UnsupportedVersion inherits from VisualCException.
+        UnsupportedChannel inherits from VisualCException.
 
     """
 
+    msvc_channel = env.get("MSVC_CHANNEL", None) if env else None
+
     frozen_binary, _ = _VSWhereExecutable.vswhere_freeze_env(env)
 
-    pdir = _find_vc_pdir(msvc_version, frozen_binary.vswhere_exe)
+    pdir = _find_vc_pdir(msvc_version, msvc_channel, frozen_binary.vswhere_exe)
     debug('pdir=%s', repr(pdir))
 
     return pdir
@@ -2580,10 +2629,10 @@ def msvc_sdk_versions(version=None, msvc_uwp_app: bool=False):
     rval = MSVC.WinSDK.get_msvc_sdk_version_list(version_def.msvc_version, msvc_uwp_app)
     return rval
 
-def msvc_toolset_versions(msvc_version=None, full: bool=True, sxs: bool=False, vswhere_exe=None):
+def msvc_toolset_versions(msvc_version=None, full: bool=True, sxs: bool=False, vswhere_exe=None, msvc_channel=None):
     debug(
-        'msvc_version=%s, full=%s, sxs=%s, vswhere_exe=%s',
-        repr(msvc_version), repr(full), repr(sxs), repr(vswhere_exe)
+        'msvc_version=%s, msvc_channel=%s, full=%s, sxs=%s, vswhere_exe=%s',
+        repr(msvc_version), repr(msvc_channel), repr(full), repr(sxs), repr(vswhere_exe)
     )
 
     _VSWhereExecutable.vswhere_freeze_executable(vswhere_exe)
@@ -2601,16 +2650,16 @@ def msvc_toolset_versions(msvc_version=None, full: bool=True, sxs: bool=False, v
         msg = f'Unsupported msvc version {msvc_version!r}'
         raise MSVCArgumentError(msg)
 
-    vc_dir = _find_vc_pdir(msvc_version, vswhere_exe)
+    vc_dir = _find_vc_pdir(msvc_version, msvc_channel, vswhere_exe)
     if not vc_dir:
-        debug('VC folder not found for version %s', repr(msvc_version))
+        debug('VC folder not found for version %s channel %s', repr(msvc_version), repr(msvc_channel))
         return rval
 
     rval = MSVC.ScriptArguments._msvc_toolset_versions_internal(msvc_version, vc_dir, full=full, sxs=sxs)
     return rval
 
-def msvc_toolset_versions_spectre(msvc_version=None, vswhere_exe=None):
-    debug('msvc_version=%s, vswhere_exe=%s', repr(msvc_version), repr(vswhere_exe))
+def msvc_toolset_versions_spectre(msvc_version=None, vswhere_exe=None, msvc_channel=None):
+    debug('msvc_version=%s, msvc_channel=%s, vswhere_exe=%s', repr(msvc_version), repr(msvc_channel), repr(vswhere_exe))
 
     _VSWhereExecutable.vswhere_freeze_executable(vswhere_exe)
 
@@ -2627,9 +2676,9 @@ def msvc_toolset_versions_spectre(msvc_version=None, vswhere_exe=None):
         msg = f'Unsupported msvc version {msvc_version!r}'
         raise MSVCArgumentError(msg)
 
-    vc_dir = _find_vc_pdir(msvc_version, vswhere_exe)
+    vc_dir = _find_vc_pdir(msvc_version, msvc_channel, vswhere_exe)
     if not vc_dir:
-        debug('VC folder not found for version %s', repr(msvc_version))
+        debug('VC folder not found for version %s channel %s', repr(msvc_version), repr(msvc_channel))
         return rval
 
     rval = MSVC.ScriptArguments._msvc_toolset_versions_spectre_internal(msvc_version, vc_dir)
@@ -2646,8 +2695,8 @@ _InstalledVCSToolsetsComponents = namedtuple('_InstalledVCSToolsetComponents', [
     'msvc_toolset_component_defs',
 ])
 
-def get_installed_vcs_toolsets_components(vswhere_exe=None):
-    debug('vswhere_exe=%s', repr(vswhere_exe))
+def get_installed_vcs_toolsets_components(vswhere_exe=None, msvc_channel=None):
+    debug('msvc_channel=%s, vswhere_exe=%s', repr(msvc_channel), repr(vswhere_exe))
 
     _VSWhereExecutable.vswhere_freeze_executable(vswhere_exe)
 
@@ -2658,7 +2707,7 @@ def get_installed_vcs_toolsets_components(vswhere_exe=None):
     vcs = get_installed_vcs()
     for msvc_version in vcs:
 
-        vc_dir = _find_vc_pdir(msvc_version, vswhere_exe)
+        vc_dir = _find_vc_pdir(msvc_version, msvc_channel, vswhere_exe)
         if not vc_dir:
             continue
 
@@ -2700,7 +2749,7 @@ def get_installed_vcs_toolsets_components(vswhere_exe=None):
 
     return installed_vcs_toolsets_components
 
-def msvc_query_version_toolset(version=None, prefer_newest: bool=True, vswhere_exe=None):
+def msvc_query_version_toolset(version=None, prefer_newest: bool=True, vswhere_exe=None, msvc_channel=None):
     """
     Return an msvc version and a toolset version given a version
     specification.
@@ -2745,8 +2794,8 @@ def msvc_query_version_toolset(version=None, prefer_newest: bool=True, vswhere_e
         MSVCArgumentError: when argument validation fails.
     """
     debug(
-        'version=%s, prefer_newest=%s, vswhere_exe=%s',
-        repr(version), repr(prefer_newest), repr(vswhere_exe)
+        'version=%s, msvc_channel=%s, prefer_newest=%s, vswhere_exe=%s',
+        repr(version), repr(msvc_channel), repr(prefer_newest), repr(vswhere_exe)
     )
 
     _VSWhereExecutable.vswhere_freeze_executable(vswhere_exe)
@@ -2843,7 +2892,7 @@ def msvc_query_version_toolset(version=None, prefer_newest: bool=True, vswhere_e
                 continue
             seen_msvc_version.add(query_msvc_version)
 
-            vc_dir = _find_vc_pdir(query_msvc_version, vswhere_exe)
+            vc_dir = _find_vc_pdir(query_msvc_version, msvc_channel, vswhere_exe)
             if not vc_dir:
                 continue
 
