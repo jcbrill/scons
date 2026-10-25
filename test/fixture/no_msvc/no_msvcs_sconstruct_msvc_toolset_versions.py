@@ -7,7 +7,11 @@ import SCons.Tool.MSCommon
 
 DefaultEnvironment(tools=[])
 
-def DummyVsWhere(msvc_version, vswhere_exe):
+def _msvc_toolset_versions_list(tsversions_t):
+    vc_toolsets = tsversions_t.vc_toolsets if tsversions_t else []
+    return vc_toolsets
+
+def DummyVsWhere(msvc_version, vswhere_exe, msvc_channel):
     # not testing versions with vswhere, so return none
     return None
 
@@ -17,5 +21,5 @@ for key in SCons.Tool.MSCommon.vc._VCVER_TO_PRODUCT_DIR:
     ]
 
 SCons.Tool.MSCommon.vc._find_vc_pdir_vswhere = DummyVsWhere
-toolset_version_list = SCons.Tool.MSCommon.msvc_toolset_versions()
+toolset_version_list = _msvc_toolset_versions_list(SCons.Tool.MSCommon.msvc_toolset_versions())
 print('toolset_version_list=' + repr(toolset_version_list))

@@ -81,7 +81,8 @@ class VisualStudio:
         return batch_file
 
     def find_vs_dir_by_vc(self, env):
-        dir = find_vc_pdir(self.vc_version, env)
+        pdir_t = find_vc_pdir(self.vc_version, env)
+        dir = pdir_t.vc_dir if pdir_t else None
         if not dir:
             debug('no installed VC %s', self.vc_version)
             return None

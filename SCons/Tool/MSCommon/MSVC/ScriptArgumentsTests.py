@@ -49,6 +49,10 @@ from SCons.Tool.MSCommon.MSVC.Exceptions import (
     MSVCSpectreLibsNotFound,
 )
 
+def _msvc_toolset_versions_list(tsversions_t):
+    vc_toolsets = tsversions_t.vc_toolsets if tsversions_t else []
+    return vc_toolsets
+
 def Environment(**kwargs):
     tools_key = 'tools'
     if tools_key not in kwargs:
@@ -131,7 +135,8 @@ class Data:
 
     for vcver in Config.MSVC_VERSION_SUFFIX.keys():
         version_def = Util.msvc_version_components(vcver)
-        vc_dir = vc.find_vc_pdir(vcver)
+        pdir_t = vc.find_vc_pdir(vcver)
+        vc_dir = pdir_t.vc_dir if pdir_t else None
         t = (version_def, vc_dir)
         ALL_VERSIONS_PAIRS.append(t)
         if vc_dir:
@@ -140,7 +145,7 @@ class Data:
     HAVE_MSVC = True if len(INSTALLED_VERSIONS_PAIRS) else False
 
     SPECTRE_TOOLSET_VERSIONS = {
-        version_def.msvc_version: vc.msvc_toolset_versions_spectre(version_def.msvc_version)
+        version_def.msvc_version: _msvc_toolset_versions_list(vc.msvc_toolset_versions_spectre(version_def.msvc_version))
         for version_def, _ in INSTALLED_VERSIONS_PAIRS
     }
 

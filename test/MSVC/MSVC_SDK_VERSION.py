@@ -40,6 +40,10 @@ import TestSCons
 test = TestSCons.TestSCons()
 test.skip_if_not_msvc()
 
+def _msvc_toolset_versions_list(tsversions_t):
+    vc_toolsets = tsversions_t.vc_toolsets if tsversions_t else []
+    return vc_toolsets
+
 installed_versions = get_installed_vcs_components()
 default_version = installed_versions[0]
 
@@ -167,7 +171,7 @@ if GE_VS2015_supported_versions:
 
             if supported.msvc_vernum > 14.0:
 
-                toolset_full_versions = msvc_toolset_versions(supported.msvc_version, full=True, sxs=False)
+                toolset_full_versions = _msvc_toolset_versions_list(msvc_toolset_versions(supported.msvc_version, full=True, sxs=False))
                 toolset_versions = version_major_list(toolset_full_versions)
 
                 # toolset msvc_version != current msvc_version and toolset msvc_version != 14.0

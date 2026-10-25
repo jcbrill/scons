@@ -36,6 +36,10 @@ from SCons.Tool.MSCommon import msvc_toolset_versions_spectre
 test = TestSCons.TestSCons()
 test.skip_if_not_msvc()
 
+def _msvc_toolset_versions_list(tsversions_t):
+    vc_toolsets = tsversions_t.vc_toolsets if tsversions_t else []
+    return vc_toolsets
+
 installed_versions = get_installed_vcs_components()
 GE_VS2017_versions = [v for v in installed_versions if v.msvc_vernum >= 14.1]
 LT_VS2017_versions = [v for v in installed_versions if v.msvc_vernum < 14.1]
@@ -45,7 +49,7 @@ if GE_VS2017_versions:
 
     for supported in GE_VS2017_versions:
 
-        spectre_toolset_versions = msvc_toolset_versions_spectre(supported.msvc_version)
+        spectre_toolset_versions = _msvc_toolset_versions_list(msvc_toolset_versions_spectre(supported.msvc_version))
         spectre_toolset_version = spectre_toolset_versions[0] if spectre_toolset_versions else None
 
         if spectre_toolset_version:
